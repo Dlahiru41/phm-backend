@@ -1,0 +1,89 @@
+# =====================================
+# Go build artifacts
+# =====================================
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Go coverage files
+*.out
+coverage.*
+cover.out
+
+# =====================================
+# Go workspace & cache
+# =====================================
+# Go build cache (usually outside repo, but just in case)
+go.work.sum
+
+# Vendor directory (ignore ONLY if you don't vendor dependencies)
+vendor/
+
+# =====================================
+# Logs & runtime files
+# =====================================
+*.log
+logs/
+tmp/
+temp/
+
+# =====================================
+# Environment & secrets
+# =====================================
+.env
+.env.*
+*.key
+*.pem
+*.crt
+secrets/
+
+# =====================================
+# IDE & Editor files
+# =====================================
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# JetBrains (GoLand / IntelliJ)
+.idea/
+*.iml
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+
+# =====================================
+# OS-specific files
+# =====================================
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# =====================================
+# Debug & profiling
+# =====================================
+*.prof
+*.pprof
+debug/
+
+# =====================================
+# Generated files (optional)
+# =====================================
+# Uncomment if you generate code
+# *.pb.go
+# *_generated.go
