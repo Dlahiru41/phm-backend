@@ -3,6 +3,7 @@ package middleware
 import (
 	"log"
 	"net/http"
+	"runtime/debug"
 
 	"ncvms/internal/response"
 
@@ -15,12 +16,12 @@ func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("[PANIC] %v", rec)
-				// Optionally log stack: debug.PrintStack() or log stack trace
+				log.Printf("[PANIC] method=%s path=%s panic=%v\n%s", c.Request.Method, c.Request.URL.Path, rec, debug.Stack())
 				c.Abort()
 				response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred.")
 			}
 		}()
+
 		c.Next()
 	}
 }

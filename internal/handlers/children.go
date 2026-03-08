@@ -16,25 +16,28 @@ import (
 
 type ChildrenHandler struct {
 	ChildStore *store.ChildStore
+	UserStore  *store.UserStore
 }
 
 type RegisterChildRequest struct {
-	FirstName          string   `json:"firstName" binding:"required"`
-	LastName           string   `json:"lastName" binding:"required"`
-	DateOfBirth        string   `json:"dateOfBirth" binding:"required"`
-	Gender             string   `json:"gender" binding:"required,oneof=male female other"`
-	BirthWeight        *float64 `json:"birthWeight"`
-	BirthHeight        *float64 `json:"birthHeight"`
-	HeadCircumference  *float64 `json:"headCircumference"`
-	BloodGroup         string   `json:"bloodGroup"`
-	MotherName         string   `json:"motherName"`
-	MotherNIC          string   `json:"motherNIC"`
-	FatherName         string   `json:"fatherName"`
-	FatherNIC          string   `json:"fatherNIC"`
-	District           string   `json:"district"`
-	DsDivision         string   `json:"dsDivision"`
-	GnDivision         string   `json:"gnDivision"`
-	Address            string   `json:"address"`
+	FirstName         string   `json:"firstName" binding:"required"`
+	LastName          string   `json:"lastName" binding:"required"`
+	DateOfBirth       string   `json:"dateOfBirth" binding:"required"`
+	Gender            string   `json:"gender" binding:"required,oneof=male female other"`
+	BirthWeight       *float64 `json:"birthWeight"`
+	BirthHeight       *float64 `json:"birthHeight"`
+	HeadCircumference *float64 `json:"headCircumference"`
+	BloodGroup        string   `json:"bloodGroup"`
+	MotherName        string   `json:"motherName"`
+	MotherNIC         string   `json:"motherNIC"`
+	FatherName        string   `json:"fatherName"`
+	FatherNIC         string   `json:"fatherNIC"`
+	District          string   `json:"district"`
+	DsDivision        string   `json:"dsDivision"`
+	GnDivision        string   `json:"gnDivision"`
+	Address           string   `json:"address"`
+	PhmId             string   `json:"phmId"`
+	AreaCode          string   `json:"areaCode"`
 }
 
 type LinkParentRequest struct {
@@ -51,11 +54,36 @@ func (h *ChildrenHandler) Register(c *gin.Context) {
 		return
 	}
 	claims := middleware.GetClaims(c)
+
+	// Determine which PHM ID to associate — explicit request value takes precedence
+	registeredBy := claims.UserId
+	if req.PhmId != "" {
+		registeredBy = req.PhmId
+	}
+
+	// Determine areaCode — explicit request value takes precedence, then fall back to PHM's DB record
+	areaCode := req.AreaCode
+	if areaCode == "" && h.UserStore != nil {
+		phmUser, err := h.UserStore.GetByID(c.Request.Context(), registeredBy)
+		if err == nil && phmUser != nil && phmUser.AreaCode != nil {
+			areaCode = *phmUser.AreaCode
+		}
+	}
+
+	// Build registration number: NCVMS-YYYY-MMDD-xxxx
+	// DateOfBirth is expected as YYYY-MM-DD
+	regSuffix := uuid.New().String()[:4]
+	var regNum string
+	if len(req.DateOfBirth) >= 10 {
+		regNum = fmt.Sprintf("NCVMS-%s-%s-%s", req.DateOfBirth[:4], req.DateOfBirth[5:7]+req.DateOfBirth[8:10], regSuffix)
+	} else {
+		regNum = fmt.Sprintf("NCVMS-%s-%s", req.DateOfBirth[:4], regSuffix)
+	}
+
 	childID := "child-" + uuid.New().String()[:8]
-	regNum := fmt.Sprintf("NCVMS-%s-%s", req.DateOfBirth[:4], uuid.New().String()[:4])
 	err := h.ChildStore.Create(c.Request.Context(), childID, regNum, req.FirstName, req.LastName, req.DateOfBirth, req.Gender, req.BloodGroup,
 		req.BirthWeight, req.BirthHeight, req.HeadCircumference, req.MotherName, req.MotherNIC, req.FatherName, req.FatherNIC,
-		claims.UserId, req.District, req.DsDivision, req.GnDivision, req.Address, "")
+		registeredBy, req.District, req.DsDivision, req.GnDivision, req.Address, areaCode)
 	if err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
 			response.AbortWithError(c, appErr)
@@ -65,6 +93,55 @@ func (h *ChildrenHandler) Register(c *gin.Context) {
 		return
 	}
 	response.Created(c, gin.H{"childId": childID, "registrationNumber": regNum, "message": "Child registered successfully."})
+}
+
+func (h *ChildrenHandler) ListMy(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil {
+		response.AbortWithError(c, errors.ErrUnauthorized)
+		return
+	}
+	if claims.Role != "phm" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+
+	_, pageProvided := c.GetQuery("page")
+	_, limitProvided := c.GetQuery("limit")
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+
+	// Pass page/limit=0 to signal "no pagination" (return all)
+	fetchPage, fetchLimit := page, limit
+	if !pageProvided && !limitProvided {
+		fetchPage, fetchLimit = 0, 0
+	}
+
+	total, list, err := h.ChildStore.ByRegisteredBy(c.Request.Context(), claims.UserId, fetchPage, fetchLimit)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to list children"))
+		return
+	}
+	for i := range list {
+		list[i].VaccinationStatus = "on-track"
+	}
+
+	if pageProvided || limitProvided {
+		response.OK(c, gin.H{"total": total, "page": page, "limit": limit, "data": list})
+	} else {
+		response.OK(c, list)
+	}
 }
 
 func (h *ChildrenHandler) GetByID(c *gin.Context) {
@@ -176,6 +253,34 @@ func (h *ChildrenHandler) List(c *gin.Context) {
 			response.AbortWithError(c, errors.ErrForbidden)
 			return
 		}
+
+		_, pageProvided := c.GetQuery("page")
+		_, limitProvided := c.GetQuery("limit")
+		if pageProvided || limitProvided {
+			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+			if page < 1 {
+				page = 1
+			}
+			if limit < 1 || limit > 100 {
+				limit = 10
+			}
+			total, list, err := h.ChildStore.ByPHMIDPaginated(c.Request.Context(), phmID, page, limit)
+			if err != nil {
+				if appErr := errors.FromErr(err); appErr != nil {
+					response.AbortWithError(c, appErr)
+					return
+				}
+				response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to list children"))
+				return
+			}
+			for i := range list {
+				list[i].VaccinationStatus = "on-track"
+			}
+			response.OK(c, gin.H{"total": total, "page": page, "limit": limit, "data": list})
+			return
+		}
+
 		list, err := h.ChildStore.ByPHMID(c.Request.Context(), phmID)
 		if err != nil {
 			if appErr := errors.FromErr(err); appErr != nil {
@@ -253,27 +358,27 @@ func childToDetail(c *models.ChildDetail) gin.H {
 	return gin.H{
 		"childId":            c.ChildId,
 		"registrationNumber": c.RegistrationNumber,
-		"firstName":         c.FirstName,
-		"lastName":          c.LastName,
-		"dateOfBirth":       c.DateOfBirth,
-		"gender":            c.Gender,
-		"bloodGroup":        c.BloodGroup,
-		"birthWeight":       c.BirthWeight,
-		"birthHeight":       c.BirthHeight,
-		"headCircumference": c.HeadCircumference,
-		"parentId":          c.ParentId,
-		"registeredBy":     c.RegisteredBy,
-		"areaCode":          c.AreaCode,
-		"areaName":          c.AreaName,
-		"createdAt":         c.CreatedAt,
-		"motherName":        c.MotherName,
-		"motherNIC":         c.MotherNIC,
-		"fatherName":        c.FatherName,
-		"fatherNIC":         c.FatherNIC,
-		"district":          c.District,
-		"dsDivision":        c.DsDivision,
-		"gnDivision":        c.GnDivision,
-		"address":           c.Address,
+		"firstName":          c.FirstName,
+		"lastName":           c.LastName,
+		"dateOfBirth":        c.DateOfBirth,
+		"gender":             c.Gender,
+		"bloodGroup":         c.BloodGroup,
+		"birthWeight":        c.BirthWeight,
+		"birthHeight":        c.BirthHeight,
+		"headCircumference":  c.HeadCircumference,
+		"parentId":           c.ParentId,
+		"registeredBy":       c.RegisteredBy,
+		"areaCode":           c.AreaCode,
+		"areaName":           c.AreaName,
+		"createdAt":          c.CreatedAt,
+		"motherName":         c.MotherName,
+		"motherNIC":          c.MotherNIC,
+		"fatherName":         c.FatherName,
+		"fatherNIC":          c.FatherNIC,
+		"district":           c.District,
+		"dsDivision":         c.DsDivision,
+		"gnDivision":         c.GnDivision,
+		"address":            c.Address,
 	}
 }
 
@@ -281,9 +386,9 @@ func childToSummary(c *models.Child) gin.H {
 	return gin.H{
 		"childId":            c.ChildId,
 		"registrationNumber": c.RegistrationNumber,
-		"firstName":         c.FirstName,
-		"lastName":          c.LastName,
-		"dateOfBirth":       c.DateOfBirth,
-		"gender":            c.Gender,
+		"firstName":          c.FirstName,
+		"lastName":           c.LastName,
+		"dateOfBirth":        c.DateOfBirth,
+		"gender":             c.Gender,
 	}
 }

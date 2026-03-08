@@ -1,0 +1,882 @@
+{
+  "info": {
+    "_postman_id": "ncvms-api-collection",
+    "name": "NCVMS API",
+    "description": "National Child Vaccination Management System API Collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.data && json.data.token) {",
+                  "    pm.collectionVariables.set('token', json.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usernameOrEmail\": \"admin@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login with email/NIC and password. Auto-saves token to collection variable."
+          }
+        },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"John Doe\",\n  \"nic\": \"199012345678\",\n  \"email\": \"john.doe@example.com\",\n  \"phoneNumber\": \"+94771234567\",\n  \"password\": \"password123\",\n  \"confirmPassword\": \"password123\",\n  \"role\": \"parent\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Register a new user. Role must be one of: parent, phm, moh"
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john.doe@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "forgot-password"]
+            }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"reset-token-here\",\n  \"newPassword\": \"newpassword123\",\n  \"confirmPassword\": \"newpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "reset-password"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "me"]
+            }
+          }
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe Updated\",\n  \"phoneNumber\": \"+94779876543\",\n  \"address\": \"123 Main St, Colombo\",\n  \"languagePreference\": \"en\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "me"]
+            }
+          }
+        },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"languagePreference\": \"en\",\n  \"notifications\": {\n    \"email\": true,\n    \"sms\": false,\n    \"push\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/me/settings",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "me", "settings"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Children",
+      "item": [
+        {
+          "name": "Register Child",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Kavindu\",\n  \"lastName\": \"Perera\",\n  \"dateOfBirth\": \"2020-04-15\",\n  \"gender\": \"male\",\n  \"birthWeight\": 3.2,\n  \"birthHeight\": 50.0,\n  \"headCircumference\": 34.0,\n  \"bloodGroup\": \"B+\",\n  \"motherName\": \"Amara Perera\",\n  \"motherNIC\": \"987654321V\",\n  \"fatherName\": \"Sunil Perera\",\n  \"fatherNIC\": \"123456789V\",\n  \"district\": \"Colombo\",\n  \"dsDivision\": \"Colombo West\",\n  \"gnDivision\": \"Colombo 01\",\n  \"address\": \"123 Main Street, Colombo\",\n  \"phmId\": \"phm-001\",\n  \"areaCode\": \"COL-01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/children",
+              "host": ["{{baseUrl}}"],
+              "path": ["children"]
+            },
+            "description": "Requires role: phm"
+          }
+        },
+        {
+          "name": "List Children (by parentId)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/children?parentId=user-parent-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["children"],
+              "query": [
+                { "key": "parentId", "value": "user-parent-12345678" }
+              ]
+            },
+            "description": "Returns plain array of child objects for the given parent. Roles: parent, phm, moh."
+          }
+        },
+        {
+          "name": "List Children by PHM (no pagination)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/children?phmId=user-phm-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["children"],
+              "query": [
+                { "key": "phmId", "value": "user-phm-12345678" }
+              ]
+            },
+            "description": "Returns a plain array of child objects (no page/limit sent). Roles: phm, moh."
+          }
+        },
+        {
+          "name": "List Children by PHM (paginated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/children?phmId=user-phm-12345678&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["children"],
+              "query": [
+                { "key": "phmId", "value": "user-phm-12345678" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            },
+            "description": "Returns paginated response { total, page, limit, data[] } when page and/or limit are provided. Roles: phm, moh."
+          }
+        },
+        {
+          "name": "List Children (MOH - all)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/children?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["children"],
+              "query": [
+                { "key": "areaCode", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "MOH-only paginated list of all children. Supports areaCode, status, search filters."
+          }
+        },
+        {
+          "name": "Search Child by Registration Number",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/children/search?registrationNumber=NCVMS-2024-abcd",
+              "host": ["{{baseUrl}}"],
+              "path": ["children", "search"],
+              "query": [
+                { "key": "registrationNumber", "value": "NCVMS-2024-abcd" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Child by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/children/child-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["children", "child-12345678"]
+            }
+          }
+        },
+        {
+          "name": "Update Child",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address\": \"456 New St, Kandy\",\n  \"district\": \"Kandy\",\n  \"dsDivision\": \"Kandy DS\",\n  \"gnDivision\": \"Kandy GN\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/children/child-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["children", "child-12345678"]
+            },
+            "description": "Requires role: phm or moh"
+          }
+        },
+        {
+          "name": "Link Parent to Child",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"NCVMS-2024-abcd\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/children/child-12345678/link-parent",
+              "host": ["{{baseUrl}}"],
+              "path": ["children", "child-12345678", "link-parent"]
+            },
+            "description": "Requires role: parent"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vaccines",
+      "item": [
+        {
+          "name": "List Vaccines",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vaccines",
+              "host": ["{{baseUrl}}"],
+              "path": ["vaccines"]
+            }
+          }
+        },
+        {
+          "name": "Get Vaccine by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vaccines/vaccine-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["vaccines", "vaccine-12345678"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vaccination Records",
+      "item": [
+        {
+          "name": "Create Vaccination Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"childId\": \"child-12345678\",\n  \"vaccineId\": \"vaccine-12345678\",\n  \"administeredDate\": \"2024-03-01\",\n  \"batchNumber\": \"BATCH-001\",\n  \"administeredBy\": \"Dr. Smith\",\n  \"location\": \"Colombo Health Center\",\n  \"site\": \"left arm\",\n  \"doseNumber\": 1,\n  \"nextDueDate\": \"2024-05-01\",\n  \"status\": \"administered\",\n  \"notes\": \"No adverse reactions observed\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/vaccination-records",
+              "host": ["{{baseUrl}}"],
+              "path": ["vaccination-records"]
+            },
+            "description": "Requires role: phm"
+          }
+        },
+        {
+          "name": "List Vaccination Records",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vaccination-records?childId=child-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["vaccination-records"],
+              "query": [
+                { "key": "childId", "value": "child-12345678" },
+                { "key": "areaCode", "value": "", "disabled": true },
+                { "key": "vaccineId", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true },
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "limit", "value": "20", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Vaccination Record by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vaccination-records/rec-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["vaccination-records", "rec-12345678"]
+            }
+          }
+        },
+        {
+          "name": "Update Vaccination Record",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batchNumber\": \"BATCH-002\",\n  \"notes\": \"Updated notes\",\n  \"status\": \"administered\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/vaccination-records/rec-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["vaccination-records", "rec-12345678"]
+            },
+            "description": "Requires role: phm"
+          }
+        },
+        {
+          "name": "Delete Vaccination Record",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vaccination-records/rec-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["vaccination-records", "rec-12345678"]
+            },
+            "description": "Requires role: moh"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Schedules",
+      "item": [
+        {
+          "name": "List Schedules",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/schedules?childId=child-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["schedules"],
+              "query": [
+                { "key": "childId", "value": "child-12345678" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Schedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"childId\": \"child-12345678\",\n  \"vaccineId\": \"vaccine-12345678\",\n  \"scheduledDate\": \"2024-04-15\",\n  \"dueDate\": \"2024-05-15\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/schedules",
+              "host": ["{{baseUrl}}"],
+              "path": ["schedules"]
+            },
+            "description": "Requires role: phm"
+          }
+        },
+        {
+          "name": "Update Schedule Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"completed\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/schedules/sch-12345678/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["schedules", "sch-12345678", "status"]
+            },
+            "description": "Requires role: phm or moh. Status: pending | scheduled | completed | missed | cancelled"
+          }
+        },
+        {
+          "name": "Send Reminder",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/schedules/sch-12345678/send-reminder",
+              "host": ["{{baseUrl}}"],
+              "path": ["schedules", "sch-12345678", "send-reminder"]
+            },
+            "description": "Requires role: phm or moh"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Growth Records",
+      "item": [
+        {
+          "name": "Create Growth Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"childId\": \"child-12345678\",\n  \"recordedDate\": \"2024-03-01\",\n  \"height\": 65.5,\n  \"weight\": 7.2,\n  \"headCircumference\": 42.0,\n  \"recordedBy\": \"PHM Officer\",\n  \"notes\": \"Normal growth\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/growth-records",
+              "host": ["{{baseUrl}}"],
+              "path": ["growth-records"]
+            },
+            "description": "Requires role: phm"
+          }
+        },
+        {
+          "name": "List Growth Records",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/growth-records?childId=child-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["growth-records"],
+              "query": [
+                { "key": "childId", "value": "child-12345678" },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"],
+              "query": [
+                { "key": "unread", "value": "true", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientId\": \"user-parent-12345678\",\n  \"type\": \"reminder\",\n  \"message\": \"Vaccination due next week\",\n  \"relatedChildId\": \"child-12345678\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"]
+            },
+            "description": "Requires role: phm or moh. Type: reminder | missed | upcoming | info | vaccination_due | growth_record"
+          }
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/notif-12345678/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "notif-12345678", "read"]
+            }
+          }
+        },
+        {
+          "name": "Mark All Notifications as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "read-all"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Generate Report",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportType\": \"vaccination_coverage\",\n  \"startDate\": \"2024-01-01\",\n  \"endDate\": \"2024-03-31\",\n  \"district\": \"Colombo\",\n  \"dsDivision\": \"\",\n  \"vaccineId\": \"\",\n  \"format\": \"pdf\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/reports/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "generate"]
+            },
+            "description": "Requires role: moh. reportType: vaccination_coverage | area_performance | audit_report | growth_analysis | monthly_summary. format: pdf | excel | csv"
+          }
+        },
+        {
+          "name": "List Reports",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Requires role: moh"
+          }
+        },
+        {
+          "name": "Download Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/rpt-12345678/download",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "rpt-12345678", "download"]
+            },
+            "description": "Requires role: moh"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit Logs",
+      "item": [
+        {
+          "name": "List Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit-logs?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit-logs"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "action", "value": "", "disabled": true },
+                { "key": "userId", "value": "", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Requires role: moh"
+          }
+        },
+        {
+          "name": "Export Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit-logs/export",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit-logs", "export"],
+              "query": [
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Requires role: moh"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "MOH Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "dashboard"]
+            },
+            "description": "Requires role: moh"
+          }
+        },
+        {
+          "name": "Vaccination Coverage",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/vaccination-coverage",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "vaccination-coverage"],
+              "query": [
+                { "key": "district", "value": "", "disabled": true },
+                { "key": "vaccineId", "value": "", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Requires role: moh"
+          }
+        },
+        {
+          "name": "Area Performance",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/area-performance",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "area-performance"],
+              "query": [
+                { "key": "district", "value": "", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Requires role: moh"
+          }
+        },
+        {
+          "name": "PHM Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/phm-dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "phm-dashboard"]
+            },
+            "description": "Requires role: phm"
+          }
+        },
+        {
+          "name": "Parent Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/parent-dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "parent-dashboard"]
+            },
+            "description": "Requires role: parent"
+          }
+        }
+      ]
+    }
+  ]
+}
+

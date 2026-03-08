@@ -35,13 +35,13 @@ func main() {
 	defer pool.Close()
 
 	authHandler := &handlers.AuthHandler{
-		UserStore:   store.NewUserStore(pool),
-		AuditStore:  store.NewAuditStore(pool),
-		JWTSecret:   cfg.JWTSecret,
-		JWTExpiry:   cfg.JWTExpiryHours,
+		UserStore:  store.NewUserStore(pool),
+		AuditStore: store.NewAuditStore(pool),
+		JWTSecret:  cfg.JWTSecret,
+		JWTExpiry:  cfg.JWTExpiryHours,
 	}
 	usersHandler := &handlers.UsersHandler{UserStore: store.NewUserStore(pool)}
-	childrenHandler := &handlers.ChildrenHandler{ChildStore: store.NewChildStore(pool)}
+	childrenHandler := &handlers.ChildrenHandler{ChildStore: store.NewChildStore(pool), UserStore: store.NewUserStore(pool)}
 	vaccinesHandler := &handlers.VaccinesHandler{VaccineStore: store.NewVaccineStore(pool)}
 	vaccRecHandler := &handlers.VaccinationRecordsHandler{RecordStore: store.NewVaccinationRecordStore(pool)}
 	schedHandler := &handlers.SchedulesHandler{ScheduleStore: store.NewScheduleStore(pool)}
@@ -50,10 +50,10 @@ func main() {
 	reportsHandler := &handlers.ReportsHandler{ReportStore: store.NewReportStore(pool)}
 	auditHandler := &handlers.AuditHandler{AuditStore: store.NewAuditStore(pool)}
 	analyticsHandler := &handlers.AnalyticsHandler{
-		ChildStore:   store.NewChildStore(pool),
-		RecordStore:  store.NewVaccinationRecordStore(pool),
-		GrowthStore:  store.NewGrowthRecordStore(pool),
-		NotifyStore:  store.NewNotificationStore(pool),
+		ChildStore:  store.NewChildStore(pool),
+		RecordStore: store.NewVaccinationRecordStore(pool),
+		GrowthStore: store.NewGrowthRecordStore(pool),
+		NotifyStore: store.NewNotificationStore(pool),
 	}
 
 	engine := gin.New()

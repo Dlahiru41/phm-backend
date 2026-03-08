@@ -39,6 +39,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 	{
 		childrenGroup.POST("", middleware.RequireRole("phm"), children.Register)
 		childrenGroup.GET("", children.List)
+		childrenGroup.GET("/my", middleware.RequireRole("phm"), children.ListMy)
 		childrenGroup.GET("/search", children.Search)
 		childrenGroup.GET("/:childId", children.GetByID)
 		childrenGroup.PUT("/:childId", middleware.RequireRole("phm", "moh"), children.Update)

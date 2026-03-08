@@ -34,8 +34,10 @@ func (s *ChildStore) GetByID(ctx context.Context, childID string) (*models.Child
 	var bw, bh, hc *float64
 	var parentID, regBy *string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, registration_number, first_name, last_name, date_of_birth, gender, blood_group,
-		       birth_weight, birth_height, head_circumference, parent_id, registered_by, area_code,
+		SELECT id, registration_number, first_name, last_name, date_of_birth::text, gender,
+		       COALESCE(blood_group, '') AS blood_group,
+		       birth_weight, birth_height, head_circumference, parent_id, registered_by,
+		       COALESCE(area_code, '') AS area_code,
 		       COALESCE(area_code,'') as area_name, mother_name, mother_nic, father_name, father_nic,
 		       district, ds_division, gn_division, address, created_at
 		FROM children WHERE id = $1
@@ -58,8 +60,10 @@ func (s *ChildStore) GetByRegistrationNumber(ctx context.Context, regNum string)
 	var bw, bh, hc *float64
 	var parentID, regBy *string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, registration_number, first_name, last_name, date_of_birth, gender, blood_group,
-		       birth_weight, birth_height, head_circumference, parent_id, registered_by, area_code,
+		SELECT id, registration_number, first_name, last_name, date_of_birth::text, gender,
+		       COALESCE(blood_group, '') AS blood_group,
+		       birth_weight, birth_height, head_circumference, parent_id, registered_by,
+		       COALESCE(area_code, '') AS area_code,
 		       COALESCE(area_code,'') as area_name, created_at
 		FROM children WHERE registration_number = $1
 	`, regNum).Scan(&c.ChildId, &c.RegistrationNumber, &c.FirstName, &c.LastName, &c.DateOfBirth, &c.Gender, &c.BloodGroup,
@@ -82,8 +86,10 @@ func (s *ChildStore) LinkParent(ctx context.Context, childID, parentID string) e
 
 func (s *ChildStore) ByParentID(ctx context.Context, parentID string) ([]models.Child, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, registration_number, first_name, last_name, date_of_birth, gender, blood_group,
-		       birth_weight, birth_height, head_circumference, parent_id, registered_by, area_code,
+		SELECT id, registration_number, first_name, last_name, date_of_birth::text, gender,
+		       COALESCE(blood_group, '') AS blood_group,
+		       birth_weight, birth_height, head_circumference, parent_id, registered_by,
+		       COALESCE(area_code, '') AS area_code,
 		       COALESCE(area_code,'') as area_name, created_at
 		FROM children WHERE parent_id = $1 ORDER BY created_at DESC
 	`, parentID)
@@ -96,8 +102,10 @@ func (s *ChildStore) ByParentID(ctx context.Context, parentID string) ([]models.
 
 func (s *ChildStore) ByPHMID(ctx context.Context, phmID string) ([]models.Child, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT c.id, c.registration_number, c.first_name, c.last_name, c.date_of_birth, c.gender, c.blood_group,
-		       c.birth_weight, c.birth_height, c.head_circumference, c.parent_id, c.registered_by, c.area_code,
+		SELECT c.id, c.registration_number, c.first_name, c.last_name, c.date_of_birth::text, c.gender,
+		       COALESCE(c.blood_group, '') AS blood_group,
+		       c.birth_weight, c.birth_height, c.head_circumference, c.parent_id, c.registered_by,
+		       COALESCE(c.area_code, '') AS area_code,
 		       COALESCE(c.area_code,'') as area_name, c.created_at
 		FROM children c
 		JOIN users u ON u.id = $1 AND u.area_code = c.area_code
@@ -108,6 +116,69 @@ func (s *ChildStore) ByPHMID(ctx context.Context, phmID string) ([]models.Child,
 	}
 	defer rows.Close()
 	return scanChildren(rows)
+}
+
+func (s *ChildStore) ByPHMIDPaginated(ctx context.Context, phmID string, page, limit int) (total int, list []models.Child, err error) {
+	base := `FROM children c JOIN users u ON u.id = $1 AND u.area_code = c.area_code`
+	err = s.pool.QueryRow(ctx, `SELECT COUNT(*) `+base, phmID).Scan(&total)
+	if err != nil {
+		return 0, nil, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT c.id, c.registration_number, c.first_name, c.last_name, c.date_of_birth::text, c.gender,
+		       COALESCE(c.blood_group, '') AS blood_group,
+		       c.birth_weight, c.birth_height, c.head_circumference, c.parent_id, c.registered_by,
+		       COALESCE(c.area_code, '') AS area_code,
+		       COALESCE(c.area_code,'') as area_name, c.created_at
+		`+base+` ORDER BY c.created_at DESC LIMIT $2 OFFSET $3
+	`, phmID, limit, (page-1)*limit)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	list, err = scanChildren(rows)
+	if err != nil {
+		return 0, nil, err
+	}
+	return total, list, nil
+}
+
+func (s *ChildStore) ByRegisteredBy(ctx context.Context, phmID string, page, limit int) (total int, list []models.Child, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM children WHERE registered_by = $1`, phmID).Scan(&total)
+	if err != nil {
+		return 0, nil, err
+	}
+	var rows pgx.Rows
+	if page > 0 && limit > 0 {
+		rows, err = s.pool.Query(ctx, `
+			SELECT id, registration_number, first_name, last_name, date_of_birth::text, gender,
+			       COALESCE(blood_group, '') AS blood_group,
+			       birth_weight, birth_height, head_circumference, parent_id, registered_by,
+			       COALESCE(area_code, '') AS area_code,
+			       COALESCE(area_code,'') as area_name, created_at
+			FROM children WHERE registered_by = $1
+			ORDER BY created_at DESC LIMIT $2 OFFSET $3
+		`, phmID, limit, (page-1)*limit)
+	} else {
+		rows, err = s.pool.Query(ctx, `
+			SELECT id, registration_number, first_name, last_name, date_of_birth::text, gender,
+			       COALESCE(blood_group, '') AS blood_group,
+			       birth_weight, birth_height, head_circumference, parent_id, registered_by,
+			       COALESCE(area_code, '') AS area_code,
+			       COALESCE(area_code,'') as area_name, created_at
+			FROM children WHERE registered_by = $1
+			ORDER BY created_at DESC
+		`, phmID)
+	}
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	list, err = scanChildren(rows)
+	if err != nil {
+		return 0, nil, err
+	}
+	return total, list, nil
 }
 
 func (s *ChildStore) ListMOH(ctx context.Context, areaCode, status, search string, page, limit int) (total int, list []models.Child, err error) {
@@ -130,8 +201,10 @@ func (s *ChildStore) ListMOH(ctx context.Context, areaCode, status, search strin
 	}
 	args = append(args, limit, (page-1)*limit)
 	rows, err := s.pool.Query(ctx, `
-		SELECT c.id, c.registration_number, c.first_name, c.last_name, c.date_of_birth, c.gender, c.blood_group,
-		       c.birth_weight, c.birth_height, c.head_circumference, c.parent_id, c.registered_by, c.area_code,
+		SELECT c.id, c.registration_number, c.first_name, c.last_name, c.date_of_birth::text, c.gender,
+		       COALESCE(c.blood_group, '') AS blood_group,
+		       c.birth_weight, c.birth_height, c.head_circumference, c.parent_id, c.registered_by,
+		       COALESCE(c.area_code, '') AS area_code,
 		       COALESCE(c.area_code,'') as area_name, c.created_at
 		`+base+` ORDER BY c.created_at DESC LIMIT $`+fmt.Sprint(idx)+` OFFSET $`+fmt.Sprint(idx+1), args...)
 	if err != nil {
