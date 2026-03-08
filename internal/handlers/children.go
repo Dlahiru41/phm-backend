@@ -218,6 +218,7 @@ func (h *ChildrenHandler) List(c *gin.Context) {
 	claims := middleware.GetClaims(c)
 	parentID := c.Query("parentId")
 	phmID := c.Query("phmId")
+	registeredBy := c.Query("registeredBy")
 
 	if parentID != "" {
 		if claims.Role != "parent" && claims.Role != "phm" && claims.Role != "moh" {
@@ -241,6 +242,53 @@ func (h *ChildrenHandler) List(c *gin.Context) {
 			list[i].VaccinationStatus = "on-track"
 		}
 		response.OK(c, list)
+		return
+	}
+
+	if registeredBy != "" {
+		if claims.Role != "phm" && claims.Role != "moh" {
+			response.AbortWithError(c, errors.ErrForbidden)
+			return
+		}
+		if claims.Role == "phm" && registeredBy != claims.UserId {
+			response.AbortWithError(c, errors.ErrForbidden)
+			return
+		}
+
+		_, pageProvided := c.GetQuery("page")
+		_, limitProvided := c.GetQuery("limit")
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+		if page < 1 {
+			page = 1
+		}
+		if limit < 1 || limit > 100 {
+			limit = 10
+		}
+
+		fetchPage, fetchLimit := page, limit
+		if !pageProvided && !limitProvided {
+			fetchPage, fetchLimit = 0, 0
+		}
+
+		total, list, err := h.ChildStore.ByRegisteredBy(c.Request.Context(), registeredBy, fetchPage, fetchLimit)
+		if err != nil {
+			if appErr := errors.FromErr(err); appErr != nil {
+				response.AbortWithError(c, appErr)
+				return
+			}
+			response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to list children"))
+			return
+		}
+		for i := range list {
+			list[i].VaccinationStatus = "on-track"
+		}
+
+		if pageProvided || limitProvided {
+			response.OK(c, gin.H{"total": total, "page": page, "limit": limit, "data": list})
+		} else {
+			response.OK(c, list)
+		}
 		return
 	}
 
