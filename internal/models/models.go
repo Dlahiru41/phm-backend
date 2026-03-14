@@ -3,16 +3,16 @@ package models
 import "time"
 
 type User struct {
-	UserId             string                 `json:"userId"`
-	Email              string                 `json:"email"`
-	NIC                string                 `json:"nic"`
-	Role               string                 `json:"role"`
-	Name               string                 `json:"name"`
-	PhoneNumber        string                 `json:"phoneNumber"`
-	Address            string                 `json:"address"`
-	LanguagePreference string                 `json:"languagePreference"`
+	UserId               string                 `json:"userId"`
+	Email                string                 `json:"email"`
+	NIC                  string                 `json:"nic"`
+	Role                 string                 `json:"role"`
+	Name                 string                 `json:"name"`
+	PhoneNumber          string                 `json:"phoneNumber"`
+	Address              string                 `json:"address"`
+	LanguagePreference   string                 `json:"languagePreference"`
 	NotificationSettings map[string]interface{} `json:"notifications,omitempty"`
-	CreatedAt          time.Time              `json:"createdAt"`
+	CreatedAt            time.Time              `json:"createdAt"`
 }
 
 type UserWithPassword struct {
@@ -23,45 +23,46 @@ type UserWithPassword struct {
 }
 
 type Child struct {
-	ChildId             string   `json:"childId"`
-	RegistrationNumber  string   `json:"registrationNumber"`
-	FirstName           string   `json:"firstName"`
-	LastName            string   `json:"lastName"`
-	DateOfBirth         string   `json:"dateOfBirth"`
-	Gender              string   `json:"gender"`
-	BloodGroup          string   `json:"bloodGroup"`
-	BirthWeight         *float64 `json:"birthWeight"`
-	BirthHeight         *float64 `json:"birthHeight"`
-	HeadCircumference   *float64 `json:"headCircumference"`
-	ParentId            *string  `json:"parentId"`
-	RegisteredBy        *string  `json:"registeredBy"`
-	AreaCode            string   `json:"areaCode"`
-	AreaName            string   `json:"areaName"`
-	VaccinationStatus   string   `json:"vaccinationStatus,omitempty"`
-	CreatedAt           time.Time `json:"createdAt"`
+	ChildId            string    `json:"childId"`
+	RegistrationNumber string    `json:"registrationNumber"`
+	FirstName          string    `json:"firstName"`
+	LastName           string    `json:"lastName"`
+	DateOfBirth        string    `json:"dateOfBirth"`
+	Gender             string    `json:"gender"`
+	BloodGroup         string    `json:"bloodGroup"`
+	BirthWeight        *float64  `json:"birthWeight"`
+	BirthHeight        *float64  `json:"birthHeight"`
+	HeadCircumference  *float64  `json:"headCircumference"`
+	ParentId           *string   `json:"parentId"`
+	RegisteredBy       *string   `json:"registeredBy"`
+	AreaCode           string    `json:"areaCode"`
+	AreaName           string    `json:"areaName"`
+	VaccinationStatus  string    `json:"vaccinationStatus,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
 }
 
 type ChildDetail struct {
 	Child
-	MotherName   string  `json:"motherName"`
-	MotherNIC    string  `json:"motherNic"`
-	FatherName   string  `json:"fatherName"`
-	FatherNIC    string  `json:"fatherNic"`
-	District     string  `json:"district"`
-	DsDivision   string  `json:"dsDivision"`
-	GnDivision   string  `json:"gnDivision"`
-	Address      string  `json:"address"`
+	MotherName           string `json:"motherName"`
+	MotherNIC            string `json:"motherNic"`
+	FatherName           string `json:"fatherName"`
+	FatherNIC            string `json:"fatherNic"`
+	District             string `json:"district"`
+	DsDivision           string `json:"dsDivision"`
+	GnDivision           string `json:"gnDivision"`
+	Address              string `json:"address"`
+	ParentWhatsAppNumber string `json:"parentWhatsAppNumber,omitempty"`
 }
 
 type Vaccine struct {
-	VaccineId        string `json:"vaccineId"`
-	Name             string `json:"name"`
-	Manufacturer     string `json:"manufacturer"`
-	DosageInfo       string `json:"dosageInfo"`
-	RecommendedAge   int    `json:"recommendedAge"`
-	IntervalDays     int    `json:"intervalDays"`
-	Description      string `json:"description"`
-	IsActive         bool   `json:"isActive"`
+	VaccineId      string `json:"vaccineId"`
+	Name           string `json:"name"`
+	Manufacturer   string `json:"manufacturer"`
+	DosageInfo     string `json:"dosageInfo"`
+	RecommendedAge int    `json:"recommendedAge"`
+	IntervalDays   int    `json:"intervalDays"`
+	Description    string `json:"description"`
+	IsActive       bool   `json:"isActive"`
 }
 
 type VaccinationRecord struct {
@@ -93,47 +94,65 @@ type VaccinationSchedule struct {
 }
 
 type GrowthRecord struct {
-	RecordId           string    `json:"recordId"`
-	ChildId            string    `json:"childId"`
-	RecordedDate       string    `json:"recordedDate"`
-	Height             *float64  `json:"height"`
-	Weight             *float64  `json:"weight"`
-	HeadCircumference  *float64  `json:"headCircumference"`
-	RecordedBy         string    `json:"recordedBy"`
-	Notes              string    `json:"notes"`
-	CreatedAt          time.Time `json:"createdAt"`
+	RecordId          string    `json:"recordId"`
+	ChildId           string    `json:"childId"`
+	RecordedDate      string    `json:"recordedDate"`
+	Height            *float64  `json:"height"`
+	Weight            *float64  `json:"weight"`
+	HeadCircumference *float64  `json:"headCircumference"`
+	RecordedBy        string    `json:"recordedBy"`
+	Notes             string    `json:"notes"`
+	CreatedAt         time.Time `json:"createdAt"`
 }
 
 type Notification struct {
-	NotificationId   string    `json:"notificationId"`
-	RecipientId      string    `json:"recipientId"`
-	Type             string    `json:"type"`
-	Message          string    `json:"message"`
-	RelatedChildId   *string   `json:"relatedChildId"`
-	SentDate         time.Time `json:"sentDate"`
-	IsRead           bool      `json:"isRead"`
+	NotificationId string    `json:"notificationId"`
+	RecipientId    string    `json:"recipientId"`
+	Type           string    `json:"type"`
+	Message        string    `json:"message"`
+	RelatedChildId *string   `json:"relatedChildId"`
+	SentDate       time.Time `json:"sentDate"`
+	IsRead         bool      `json:"isRead"`
 }
 
 type Report struct {
-	ReportId       string    `json:"reportId"`
-	ReportType     string    `json:"reportType"`
-	GeneratedBy    string    `json:"generatedBy"`
-	GeneratedDate  time.Time `json:"generatedDate"`
-	StartDate      string    `json:"startDate"`
-	EndDate        string    `json:"endDate"`
-	DownloadUrl    string    `json:"downloadUrl"`
+	ReportId      string    `json:"reportId"`
+	ReportType    string    `json:"reportType"`
+	GeneratedBy   string    `json:"generatedBy"`
+	GeneratedDate time.Time `json:"generatedDate"`
+	StartDate     string    `json:"startDate"`
+	EndDate       string    `json:"endDate"`
+	DownloadUrl   string    `json:"downloadUrl"`
 }
 
 type AuditLog struct {
-	LogId       string    `json:"logId"`
-	UserId      *string   `json:"userId"`
-	UserRole    string    `json:"userRole"`
-	UserName    string    `json:"userName"`
-	Action      string    `json:"action"`
-	EntityType  string    `json:"entityType"`
-	EntityId    string    `json:"entityId"`
-	Details     string    `json:"details"`
-	Timestamp   time.Time `json:"timestamp"`
-	IpAddress   string    `json:"ipAddress"`
+	LogId      string    `json:"logId"`
+	UserId     *string   `json:"userId"`
+	UserRole   string    `json:"userRole"`
+	UserName   string    `json:"userName"`
+	Action     string    `json:"action"`
+	EntityType string    `json:"entityType"`
+	EntityId   string    `json:"entityId"`
+	Details    string    `json:"details"`
+	Timestamp  time.Time `json:"timestamp"`
+	IpAddress  string    `json:"ipAddress"`
 }
 
+type ChildLinkInfo struct {
+	ChildID              string
+	RegistrationNumber   string
+	ParentID             *string
+	ParentWhatsAppNumber string
+}
+
+type ChildLinkOTP struct {
+	ID           string
+	ChildID      string
+	ParentID     string
+	OTPHash      string
+	ExpiresAt    time.Time
+	AttemptCount int
+	MaxAttempts  int
+	CreatedAt    time.Time
+	ConsumedAt   *time.Time
+}

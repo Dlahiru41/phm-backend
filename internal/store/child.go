@@ -18,14 +18,14 @@ func NewChildStore(pool *pgxpool.Pool) *ChildStore { return &ChildStore{pool: po
 
 func (s *ChildStore) Create(ctx context.Context, id, regNum, firstName, lastName, dob, gender, bloodGroup string,
 	birthWeight, birthHeight, headCirc *float64, motherName, motherNIC, fatherName, fatherNIC string,
-	registeredBy, district, dsDiv, gnDiv, address, areaCode string) error {
+	registeredBy, district, dsDiv, gnDiv, address, areaCode, parentWhatsAppNumber string) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO children (id, registration_number, first_name, last_name, date_of_birth, gender, blood_group,
 			birth_weight, birth_height, head_circumference, mother_name, mother_nic, father_name, father_nic,
-			registered_by, district, ds_division, gn_division, address, area_code)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7,''), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+			registered_by, district, ds_division, gn_division, address, area_code, parent_whatsapp_number)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7,''), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 	`, id, regNum, firstName, lastName, dob, gender, bloodGroup, birthWeight, birthHeight, headCirc,
-		motherName, motherNIC, fatherName, fatherNIC, registeredBy, district, dsDiv, gnDiv, address, areaCode)
+		motherName, motherNIC, fatherName, fatherNIC, registeredBy, district, dsDiv, gnDiv, address, areaCode, parentWhatsAppNumber)
 	return err
 }
 
@@ -39,11 +39,12 @@ func (s *ChildStore) GetByID(ctx context.Context, childID string) (*models.Child
 		       birth_weight, birth_height, head_circumference, parent_id, registered_by,
 		       COALESCE(area_code, '') AS area_code,
 		       COALESCE(area_code,'') as area_name, mother_name, mother_nic, father_name, father_nic,
-		       district, ds_division, gn_division, address, created_at
+		       district, ds_division, gn_division, address, created_at,
+		       COALESCE(parent_whatsapp_number, '') AS parent_whatsapp_number
 		FROM children WHERE id = $1
 	`, childID).Scan(&c.ChildId, &c.RegistrationNumber, &c.FirstName, &c.LastName, &c.DateOfBirth, &c.Gender, &c.BloodGroup,
 		&bw, &bh, &hc, &parentID, &regBy, &c.AreaCode, &c.AreaName, &c.MotherName, &c.MotherNIC, &c.FatherName, &c.FatherNIC,
-		&c.District, &c.DsDivision, &c.GnDivision, &c.Address, &c.CreatedAt)
+		&c.District, &c.DsDivision, &c.GnDivision, &c.Address, &c.CreatedAt, &c.ParentWhatsAppNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +54,19 @@ func (s *ChildStore) GetByID(ctx context.Context, childID string) (*models.Child
 	c.ParentId = parentID
 	c.RegisteredBy = regBy
 	return &c, nil
+}
+
+func (s *ChildStore) GetLinkInfo(ctx context.Context, childID, registrationNumber string) (*models.ChildLinkInfo, error) {
+	var info models.ChildLinkInfo
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, registration_number, parent_id, COALESCE(parent_whatsapp_number, '') AS parent_whatsapp_number
+		FROM children
+		WHERE id = $1 AND registration_number = $2
+	`, childID, registrationNumber).Scan(&info.ChildID, &info.RegistrationNumber, &info.ParentID, &info.ParentWhatsAppNumber)
+	if err != nil {
+		return nil, err
+	}
+	return &info, nil
 }
 
 func (s *ChildStore) GetByRegistrationNumber(ctx context.Context, regNum string) (*models.Child, error) {

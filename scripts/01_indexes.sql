@@ -16,6 +16,7 @@ CREATE INDEX idx_children_parent_id ON children(parent_id) WHERE parent_id IS NO
 CREATE INDEX idx_children_registered_by ON children(registered_by) WHERE registered_by IS NOT NULL;
 CREATE INDEX idx_children_area_code ON children(area_code);
 CREATE INDEX idx_children_created_at ON children(created_at);
+CREATE INDEX idx_children_parent_whatsapp_number ON children(parent_whatsapp_number) WHERE parent_whatsapp_number IS NOT NULL;
 
 -- Vaccination records
 CREATE INDEX idx_vaccination_records_child_id ON vaccination_records(child_id);
@@ -48,3 +49,7 @@ CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp);
 CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX idx_audit_logs_action ON audit_logs(action);
+
+-- Child link OTPs
+CREATE INDEX idx_child_link_otps_pair ON child_link_otps(child_id, parent_id, created_at DESC);
+CREATE INDEX idx_child_link_otps_active ON child_link_otps(child_id, parent_id, expires_at) WHERE consumed_at IS NULL;

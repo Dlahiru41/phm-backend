@@ -43,6 +43,9 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		childrenGroup.GET("/search", children.Search)
 		childrenGroup.GET("/:childId", children.GetByID)
 		childrenGroup.PUT("/:childId", middleware.RequireRole("phm", "moh"), children.Update)
+		childrenGroup.POST("/:childId/link-parent/otp/request", middleware.RequireRole("parent"), children.RequestLinkOTP)
+		// Backward-compatible alias for clients expecting a dedicated OTP verification path.
+		childrenGroup.POST("/:childId/link-parent/otp/verify", middleware.RequireRole("parent"), children.LinkParent)
 		childrenGroup.POST("/:childId/link-parent", middleware.RequireRole("parent"), children.LinkParent)
 	}
 

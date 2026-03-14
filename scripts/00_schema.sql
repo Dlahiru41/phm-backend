@@ -59,8 +59,21 @@ CREATE TABLE children (
     gn_division         TEXT,
     address             TEXT,
     area_code           TEXT,
+    parent_whatsapp_number TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE child_link_otps (
+    id              TEXT PRIMARY KEY,
+    child_id        TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    parent_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    otp_hash        TEXT NOT NULL,
+    attempt_count   INT NOT NULL DEFAULT 0,
+    max_attempts    INT NOT NULL DEFAULT 5,
+    expires_at      TIMESTAMPTZ NOT NULL,
+    consumed_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ---------------------------------------------------------------------------

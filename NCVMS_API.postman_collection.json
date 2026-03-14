@@ -335,7 +335,7 @@
           }
         },
         {
-          "name": "Link Parent to Child",
+          "name": "Request Parent Link OTP",
           "request": {
             "method": "POST",
             "header": [
@@ -347,11 +347,31 @@
               "raw": "{\n  \"registrationNumber\": \"NCVMS-2024-abcd\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/children/child-12345678/link-parent",
+              "raw": "{{baseUrl}}/children/child-12345678/link-parent/otp/request",
               "host": ["{{baseUrl}}"],
-              "path": ["children", "child-12345678", "link-parent"]
+              "path": ["children", "child-12345678", "link-parent", "otp", "request"]
             },
-            "description": "Requires role: parent"
+            "description": "Step 1. Requires role: parent"
+          }
+        },
+        {
+          "name": "Verify Parent Link OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"NCVMS-2024-abcd\",\n  \"otpCode\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/children/child-12345678/link-parent/otp/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["children", "child-12345678", "link-parent", "otp", "verify"]
+            },
+            "description": "Step 2. Requires role: parent"
           }
         }
       ]
@@ -879,4 +899,3 @@
     }
   ]
 }
-

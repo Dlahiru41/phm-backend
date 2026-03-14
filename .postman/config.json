@@ -1,0 +1,15 @@
+{
+  "workspace": {
+    "id": "31963a2f-f4c7-4bef-8730-bf89ce02dc62"
+  },
+  "entities": {
+    "environments": [],
+    "flows": [],
+    "globals": [],
+    "mocks": [],
+    "specs": [],
+    "collections": [
+      "..\\NCVMS_API.postman_collection.json"
+    ]
+  }
+}
