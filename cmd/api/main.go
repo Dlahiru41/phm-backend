@@ -47,11 +47,27 @@ func main() {
 		JWTExpiry:  cfg.JWTExpiryHours,
 	}
 	usersHandler := &handlers.UsersHandler{UserStore: usersStore}
+
+	// Initialize WhatsApp sender with Twilio if credentials are provided, otherwise use logging sender
+	var whatsAppSender messaging.WhatsAppSender
+	if cfg.TwilioAccountSID != "" && cfg.TwilioAuthToken != "" && cfg.TwilioPhoneNumber != "" {
+		twilioSender, err := messaging.NewTwilioWhatsAppSender(cfg.TwilioAccountSID, cfg.TwilioAuthToken, cfg.TwilioPhoneNumber)
+		if err != nil {
+			log.Printf("warning: failed to initialize Twilio sender: %v, falling back to logging sender", err)
+			whatsAppSender = messaging.NewLogWhatsAppSender()
+		} else {
+			whatsAppSender = twilioSender
+		}
+	} else {
+		log.Println("info: Twilio credentials not configured, using logging sender")
+		whatsAppSender = messaging.NewLogWhatsAppSender()
+	}
+
 	childrenHandler := &handlers.ChildrenHandler{
 		ChildStore:        childStore,
 		UserStore:         usersStore,
 		ChildLinkOTPStore: childLinkOTPStore,
-		WhatsAppSender:    messaging.NewLogWhatsAppSender(),
+		WhatsAppSender:    whatsAppSender,
 		OTPTTL:            time.Duration(cfg.ChildLinkOTPTTLMin) * time.Minute,
 		OTPResendCooldown: time.Duration(cfg.ChildLinkOTPCooldownSec) * time.Second,
 		OTPMaxAttempts:    cfg.ChildLinkOTPMaxAttempts,
