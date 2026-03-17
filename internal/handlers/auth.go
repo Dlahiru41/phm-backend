@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -18,15 +19,15 @@ import (
 )
 
 type AuthHandler struct {
-	UserStore *store.UserStore
+	UserStore  *store.UserStore
 	AuditStore *store.AuditStore
-	JWTSecret string
-	JWTExpiry int
+	JWTSecret  string
+	JWTExpiry  int
 }
 
 type LoginRequest struct {
 	UsernameOrEmail string `json:"usernameOrEmail" binding:"required"`
-	Password       string `json:"password" binding:"required"`
+	Password        string `json:"password" binding:"required"`
 }
 
 type RegisterRequest struct {
@@ -45,6 +46,12 @@ type ForgotPasswordRequest struct {
 
 type ResetPasswordRequest struct {
 	Token           string `json:"token" binding:"required"`
+	NewPassword     string `json:"newPassword" binding:"required,min=6"`
+	ConfirmPassword string `json:"confirmPassword" binding:"required"`
+}
+
+type ChangePasswordRequest struct {
+	OldPassword     string `json:"oldPassword" binding:"required"`
 	NewPassword     string `json:"newPassword" binding:"required,min=6"`
 	ConfirmPassword string `json:"confirmPassword" binding:"required"`
 }
@@ -68,18 +75,33 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	var user *models.UserWithPassword
 	var err error
 	if strings.Contains(req.UsernameOrEmail, "@") {
+		log.Printf("[LOGIN] Looking up user by email: %s", req.UsernameOrEmail)
 		user, err = h.UserStore.GetByEmail(c.Request.Context(), req.UsernameOrEmail)
 	} else {
+		log.Printf("[LOGIN] Looking up user by NIC: %s", req.UsernameOrEmail)
 		user, err = h.UserStore.GetByNIC(c.Request.Context(), req.UsernameOrEmail)
 	}
-	if err != nil || user == nil {
+	if err != nil {
+		log.Printf("[LOGIN] User lookup error: %v", err)
 		response.Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid credentials")
 		return
 	}
+	if user == nil {
+		log.Printf("[LOGIN] User not found: %s", req.UsernameOrEmail)
+		response.Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid credentials")
+		return
+	}
+
+	log.Printf("[LOGIN] User found - ID: %s, Role: %s, FirstLogin: %v", user.UserId, user.Role, user.FirstLogin)
+	log.Printf("[LOGIN] Attempting password comparison for user: %s", user.Email)
+
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
+		log.Printf("[LOGIN] Password comparison failed for user: %s", req.UsernameOrEmail)
 		response.Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid credentials")
 		return
 	}
+
+	log.Printf("[LOGIN] Password comparison successful for user: %s", user.Email)
 
 	token, err := auth.NewToken(user.UserId, user.Role, user.Email, h.JWTSecret, h.JWTExpiry)
 	if err != nil {
@@ -93,8 +115,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"token": token,
-		"user":  userToResponse(user),
+		"token":      token,
+		"user":       userToResponse(user),
+		"firstLogin": user.FirstLogin,
 	})
 }
 
@@ -206,6 +229,71 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"message": "Password reset successfully."})
+}
+
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil {
+		response.AbortWithError(c, errors.ErrUnauthorized)
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if response.ValidationErrorFromBind(c, err) {
+			return
+		}
+		response.ValidationError(c, "Validation failed", nil)
+		return
+	}
+
+	if req.NewPassword != req.ConfirmPassword {
+		response.ValidationError(c, "Passwords do not match.", []response.ErrorDetail{{Field: "confirmPassword", Message: "Must match the password field."}})
+		return
+	}
+
+	if len(req.NewPassword) < 6 {
+		response.ValidationError(c, "Password must be at least 6 characters", nil)
+		return
+	}
+
+	ctx := c.Request.Context()
+	user, err := h.UserStore.GetByID(ctx, claims.UserId)
+	if err != nil || user == nil {
+		response.AbortWithError(c, errors.ErrNotFound)
+		return
+	}
+
+	// Verify old password
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)) != nil {
+		response.Error(c, http.StatusUnauthorized, "INVALID_PASSWORD", "Current password is incorrect")
+		return
+	}
+
+	// Hash new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to hash password")
+		return
+	}
+
+	// Update password
+	err = h.UserStore.UpdatePassword(ctx, claims.UserId, string(hash))
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to update password")
+		return
+	}
+
+	// If user is on first login, mark it as complete
+	if user.FirstLogin {
+		err = h.UserStore.CompleteFirstLogin(ctx, claims.UserId)
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to update first login status")
+			return
+		}
+	}
+
+	response.OK(c, gin.H{"message": "Password changed successfully."})
 }
 
 func userToResponse(u *models.UserWithPassword) gin.H {

@@ -20,6 +20,10 @@ type UserWithPassword struct {
 	PasswordHash string
 	AreaCode     *string
 	UpdatedAt    time.Time
+	FirstLogin   bool    `json:"firstLogin,omitempty"`
+	EmployeeId   *string `json:"employeeId,omitempty"`
+	AssignedArea *string `json:"assignedArea,omitempty"`
+	CreatedByMoh *string `json:"createdByMoh,omitempty"`
 }
 
 type Child struct {

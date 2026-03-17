@@ -1,0 +1,300 @@
+{
+  "info": {
+    "_postman_id": "phm-auth-workflow",
+    "name": "PHM Account Authorization & Workflow",
+    "description": "API endpoints for PHM account creation, login, and password management",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Create PHM Account (MOH Only)",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{MOH_TOKEN}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"employeeId\": \"PHM001\",\n  \"name\": \"John Doe\",\n  \"nic\": \"199234567890\",\n  \"email\": \"john.doe@health.gov.lk\",\n  \"phoneNumber\": \"+94771234567\",\n  \"assignedArea\": \"Colombo District\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/phm",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users",
+            "phm"
+          ]
+        },
+        "description": "MOH admin creates a new PHM account. Returns temporary password that must be shared with PHM user securely."
+      },
+      "response": [
+        {
+          "name": "Success - 201 Created",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/phm",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "phm"
+              ]
+            }
+          },
+          "status": "Created",
+          "code": 201,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"message\": \"PHM account created successfully.\",\n  \"userId\": \"user-phm-abc12def\",\n  \"employeeId\": \"PHM001\",\n  \"temporaryPassword\": \"TEMP-A1B2C3D4\",\n  \"firstLogin\": true,\n  \"note\": \"Please use the temporary password for the first login and change it immediately.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "2. PHM First Login (with Temporary Password)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"usernameOrEmail\": \"john.doe@health.gov.lk\",\n  \"password\": \"TEMP-A1B2C3D4\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "PHM user logs in with temporary password. Response includes firstLogin: true to indicate password change is required."
+      },
+      "response": [
+        {
+          "name": "Success - 200 OK",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"userId\": \"user-phm-abc12def\",\n    \"email\": \"john.doe@health.gov.lk\",\n    \"nic\": \"199234567890\",\n    \"name\": \"John Doe\",\n    \"role\": \"phm\",\n    \"phoneNumber\": \"+94771234567\",\n    \"address\": \"\",\n    \"languagePreference\": \"en\",\n    \"createdAt\": \"2026-03-17T10:30:00Z\"\n  },\n  \"firstLogin\": true\n}"
+        }
+      ]
+    },
+    {
+      "name": "3. Change Password (Complete First Login)",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{PHM_TOKEN}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"oldPassword\": \"TEMP-A1B2C3D4\",\n  \"newPassword\": \"MyNewSecurePassword123\",\n  \"confirmPassword\": \"MyNewSecurePassword123\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/change-password",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "change-password"
+          ]
+        },
+        "description": "PHM user changes password from temporary to permanent. This completes the first login process. After this, firstLogin will be false on subsequent logins."
+      },
+      "response": [
+        {
+          "name": "Success - 200 OK",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/change-password",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "change-password"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"message\": \"Password changed successfully.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "4. PHM Subsequent Login (after password change)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"usernameOrEmail\": \"john.doe@health.gov.lk\",\n  \"password\": \"MyNewSecurePassword123\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "PHM user logs in with permanent password. Response now includes firstLogin: false (no password change required)."
+      },
+      "response": [
+        {
+          "name": "Success - 200 OK",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"userId\": \"user-phm-abc12def\",\n    \"email\": \"john.doe@health.gov.lk\",\n    \"nic\": \"199234567890\",\n    \"name\": \"John Doe\",\n    \"role\": \"phm\",\n    \"phoneNumber\": \"+94771234567\",\n    \"address\": \"\",\n    \"languagePreference\": \"en\",\n    \"createdAt\": \"2026-03-17T10:30:00Z\"\n  },\n  \"firstLogin\": false\n}"
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "MOH_TOKEN",
+      "value": "your_moh_jwt_token_here",
+      "type": "string"
+    },
+    {
+      "key": "PHM_TOKEN",
+      "value": "your_phm_jwt_token_here",
+      "type": "string"
+    }
+  ]
+}
+

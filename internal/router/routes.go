@@ -25,6 +25,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		authGroup.POST("/reset-password", auth.ResetPassword)
 	}
 	api.POST("/auth/logout", authMw, auth.Logout)
+	api.POST("/auth/change-password", authMw, auth.ChangePassword)
 
 	// Users (authenticated)
 	usersGroup := api.Group("/users").Use(authMw)
@@ -32,6 +33,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		usersGroup.GET("/me", users.GetMe)
 		usersGroup.PUT("/me", users.UpdateMe)
 		usersGroup.PUT("/me/settings", users.UpdateSettings)
+		usersGroup.POST("/phm", middleware.RequireRole("moh"), users.CreatePHM)
 	}
 
 	// Children

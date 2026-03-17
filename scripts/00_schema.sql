@@ -22,6 +22,10 @@ CREATE TABLE users (
     language_preference TEXT DEFAULT 'en',
     notification_settings JSONB DEFAULT '{"email": true, "sms": false, "push": true}',
     area_code       TEXT,
+    employee_id     TEXT UNIQUE,
+    assigned_area   TEXT,
+    first_login     BOOLEAN DEFAULT false,
+    created_by_moh  TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -18,16 +18,24 @@ func (s *UserStore) GetByID(ctx context.Context, id string) (*models.UserWithPas
 	var u models.UserWithPassword
 	var areaCode *string
 	var notif []byte
+	var employeeId *string
+	var assignedArea *string
+	var createdByMoh *string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, nic, password_hash, role, name, phone_number, address,
-		       language_preference, COALESCE(notification_settings::text,'{}'), area_code, created_at, updated_at
+		SELECT id, email, nic, password_hash, role, name, COALESCE(phone_number, ''), 
+		       COALESCE(address, ''), language_preference, COALESCE(notification_settings::text,'{}'), 
+		       area_code, created_at, updated_at, first_login, employee_id, assigned_area, created_by_moh
 		FROM users WHERE id = $1
 	`, id).Scan(&u.UserId, &u.Email, &u.NIC, &u.PasswordHash, &u.Role, &u.Name, &u.PhoneNumber, &u.Address,
-		&u.LanguagePreference, &notif, &areaCode, &u.CreatedAt, &u.UpdatedAt)
+		&u.LanguagePreference, &notif, &areaCode, &u.CreatedAt, &u.UpdatedAt, &u.FirstLogin,
+		&employeeId, &assignedArea, &createdByMoh)
 	if err != nil {
 		return nil, err
 	}
 	u.AreaCode = areaCode
+	u.EmployeeId = employeeId
+	u.AssignedArea = assignedArea
+	u.CreatedByMoh = createdByMoh
 	_ = notif
 	return &u, nil
 }
@@ -36,16 +44,24 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*models.UserW
 	var u models.UserWithPassword
 	var areaCode *string
 	var notifJSON []byte
+	var employeeId *string
+	var assignedArea *string
+	var createdByMoh *string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, nic, password_hash, role, name, phone_number, address,
-		       language_preference, notification_settings, area_code, created_at, updated_at
+		SELECT id, email, nic, password_hash, role, name, COALESCE(phone_number, ''), 
+		       COALESCE(address, ''), language_preference, COALESCE(notification_settings::text,'{}'), 
+		       area_code, created_at, updated_at, first_login, employee_id, assigned_area, created_by_moh
 		FROM users WHERE LOWER(email) = LOWER($1)
 	`, email).Scan(&u.UserId, &u.Email, &u.NIC, &u.PasswordHash, &u.Role, &u.Name, &u.PhoneNumber, &u.Address,
-		&u.LanguagePreference, &notifJSON, &areaCode, &u.CreatedAt, &u.UpdatedAt)
+		&u.LanguagePreference, &notifJSON, &areaCode, &u.CreatedAt, &u.UpdatedAt, &u.FirstLogin,
+		&employeeId, &assignedArea, &createdByMoh)
 	if err != nil {
 		return nil, err
 	}
 	u.AreaCode = areaCode
+	u.EmployeeId = employeeId
+	u.AssignedArea = assignedArea
+	u.CreatedByMoh = createdByMoh
 	_ = notifJSON
 	return &u, nil
 }
@@ -53,16 +69,24 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*models.UserW
 func (s *UserStore) GetByNIC(ctx context.Context, nic string) (*models.UserWithPassword, error) {
 	var u models.UserWithPassword
 	var areaCode *string
+	var employeeId *string
+	var assignedArea *string
+	var createdByMoh *string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, nic, password_hash, role, name, phone_number, address,
-		       language_preference, area_code, created_at, updated_at
+		SELECT id, email, nic, password_hash, role, name, COALESCE(phone_number, ''), 
+		       COALESCE(address, ''), language_preference, area_code, created_at, updated_at,
+		       first_login, employee_id, assigned_area, created_by_moh
 		FROM users WHERE nic = $1
 	`, nic).Scan(&u.UserId, &u.Email, &u.NIC, &u.PasswordHash, &u.Role, &u.Name, &u.PhoneNumber, &u.Address,
-		&u.LanguagePreference, &areaCode, &u.CreatedAt, &u.UpdatedAt)
+		&u.LanguagePreference, &areaCode, &u.CreatedAt, &u.UpdatedAt, &u.FirstLogin,
+		&employeeId, &assignedArea, &createdByMoh)
 	if err != nil {
 		return nil, err
 	}
 	u.AreaCode = areaCode
+	u.EmployeeId = employeeId
+	u.AssignedArea = assignedArea
+	u.CreatedByMoh = createdByMoh
 	return &u, nil
 }
 
@@ -122,5 +146,18 @@ func (s *UserStore) ConsumeResetToken(ctx context.Context, token string) (userID
 
 func (s *UserStore) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`, userID, passwordHash)
+	return err
+}
+
+func (s *UserStore) CreatePHM(ctx context.Context, id, employeeId, email, nic, passwordHash, name, phone, assignedArea, createdByMohID string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO users (id, employee_id, email, nic, password_hash, role, name, phone_number, assigned_area, created_by_moh, first_login, language_preference)
+		VALUES ($1, $2, $3, $4, $5, 'phm', $6, $7, $8, $9, true, 'en')
+	`, id, employeeId, email, nic, passwordHash, name, phone, assignedArea, createdByMohID)
+	return err
+}
+
+func (s *UserStore) CompleteFirstLogin(ctx context.Context, userID string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET first_login = false, updated_at = NOW() WHERE id = $1`, userID)
 	return err
 }
