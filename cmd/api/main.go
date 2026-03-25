@@ -49,7 +49,11 @@ func main() {
 		JWTSecret:  cfg.JWTSecret,
 		JWTExpiry:  cfg.JWTExpiryHours,
 	}
-	usersHandler := &handlers.UsersHandler{UserStore: usersStore, WhatsAppSender: whatsAppSender}
+	usersHandler := &handlers.UsersHandler{
+		UserStore:      usersStore,
+		WhatsAppSender: whatsAppSender,
+		PHMLoginURL:    cfg.PHMLoginURL,
+	}
 
 	childrenHandler := &handlers.ChildrenHandler{
 		ChildStore:        childStore,

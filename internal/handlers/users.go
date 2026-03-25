@@ -22,6 +22,7 @@ import (
 type UsersHandler struct {
 	UserStore      *store.UserStore
 	WhatsAppSender messaging.WhatsAppSender
+	PHMLoginURL    string
 }
 
 type UpdateProfileRequest struct {
@@ -234,11 +235,7 @@ func (h *UsersHandler) CreatePHM(c *gin.Context) {
 		return
 	}
 
-	message := fmt.Sprintf(
-		"Hello %s,\n\nYour PHM account has been created in SuwaCareLK.\nTemporary Password: %s\n\nPlease use this temporary password for your first login and change it immediately.\n\n- Ministry of Health, Sri Lanka",
-		strings.TrimSpace(req.Name),
-		temporaryPassword,
-	)
+	message := h.buildPHMOnboardingMessage(req, temporaryPassword)
 
 	deliveryStatus := "sent"
 	note := "Temporary password has been sent to the provided phone number."
@@ -257,4 +254,21 @@ func (h *UsersHandler) CreatePHM(c *gin.Context) {
 		"deliveryStatus": deliveryStatus,
 		"note":           note,
 	})
+}
+
+func (h *UsersHandler) buildPHMOnboardingMessage(req CreatePHMRequest, temporaryPassword string) string {
+	loginURL := strings.TrimSpace(h.PHMLoginURL)
+	if loginURL == "" {
+		loginURL = "https://suwacare.lk/login"
+	}
+
+	return fmt.Sprintf(
+		"Hello %s,\n\nYour SuwaCareLK account has been created.\n\nEmployee ID: %s\nTemporary Password: %s\nAssigned Area: %s\nEmail: %s\n\nPlease login and change your password immediately.\n\nSystem Link: %s\n\n- Ministry of Health",
+		strings.TrimSpace(req.Name),
+		strings.TrimSpace(req.EmployeeId),
+		temporaryPassword,
+		strings.TrimSpace(req.AssignedArea),
+		strings.TrimSpace(req.Email),
+		loginURL,
+	)
 }
