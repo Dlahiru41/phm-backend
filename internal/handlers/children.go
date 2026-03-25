@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"math/big"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ type ChildrenHandler struct {
 	OTPTTL            time.Duration
 	OTPResendCooldown time.Duration
 	OTPMaxAttempts    int
+	ParentPortalLink  string
 }
 
 type RegisterChildRequest struct {
@@ -116,6 +118,14 @@ func (h *ChildrenHandler) Register(c *gin.Context) {
 		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to register child"))
 		return
 	}
+
+	if h.WhatsAppSender != nil {
+		if msgErr := h.sendRegistrationMessage(c, parentWhatsAppNumber, req, regNum); msgErr != nil {
+			// Registration is already committed; log and keep API response successful.
+			log.Printf("[child-registration-message] failed to send notification for child=%s reg=%s: %v", childID, regNum, msgErr)
+		}
+	}
+
 	response.Created(c, gin.H{"childId": childID, "registrationNumber": regNum, "message": "Child registered successfully."})
 }
 
@@ -640,4 +650,35 @@ func (h *ChildrenHandler) getOTPMaxAttempts() int {
 		return 5
 	}
 	return h.OTPMaxAttempts
+}
+
+func (h *ChildrenHandler) sendRegistrationMessage(c *gin.Context, toPhone string, req RegisterChildRequest, registrationNumber string) error {
+	parentName := strings.TrimSpace(req.MotherName)
+	if parentName == "" {
+		parentName = strings.TrimSpace(req.FatherName)
+	}
+	if parentName == "" {
+		parentName = "Parent"
+	}
+
+	childFullName := strings.TrimSpace(strings.TrimSpace(req.FirstName) + " " + strings.TrimSpace(req.LastName))
+	if childFullName == "" {
+		childFullName = "N/A"
+	}
+
+	portalLink := strings.TrimSpace(h.ParentPortalLink)
+	if portalLink == "" {
+		portalLink = "https://suwacare.lk/parent-portal"
+	}
+
+	message := fmt.Sprintf(
+		"Hello %s,\n\nYour child has been successfully registered in the SuwaCareLK system.\n\nChild Name: %s\nDate of Birth: %s\nRegistration Number: %s\n\nUse this code to securely link your child to your account.\n\nSystem Link: %s\n\n- Ministry of Health, Sri Lanka",
+		parentName,
+		childFullName,
+		req.DateOfBirth,
+		registrationNumber,
+		portalLink,
+	)
+
+	return h.WhatsAppSender.SendMessage(c.Request.Context(), toPhone, message)
 }

@@ -59,6 +59,7 @@ func main() {
 		OTPTTL:            time.Duration(cfg.ChildLinkOTPTTLMin) * time.Minute,
 		OTPResendCooldown: time.Duration(cfg.ChildLinkOTPCooldownSec) * time.Second,
 		OTPMaxAttempts:    cfg.ChildLinkOTPMaxAttempts,
+		ParentPortalLink:  cfg.ParentPortalLink,
 	}
 	vaccinesHandler := &handlers.VaccinesHandler{VaccineStore: store.NewVaccineStore(pool)}
 	vaccRecHandler := &handlers.VaccinationRecordsHandler{RecordStore: store.NewVaccinationRecordStore(pool)}

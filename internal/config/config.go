@@ -13,6 +13,7 @@ type Config struct {
 	ChildLinkOTPTTLMin      int
 	ChildLinkOTPCooldownSec int
 	ChildLinkOTPMaxAttempts int
+	ParentPortalLink        string
 }
 
 func Load() (*Config, error) {
@@ -28,6 +29,7 @@ func Load() (*Config, error) {
 		ChildLinkOTPTTLMin:      getIntEnv("CHILD_LINK_OTP_TTL_MIN", 5),
 		ChildLinkOTPCooldownSec: getIntEnv("CHILD_LINK_OTP_COOLDOWN_SEC", 60),
 		ChildLinkOTPMaxAttempts: getIntEnv("CHILD_LINK_OTP_MAX_ATTEMPTS", 5),
+		ParentPortalLink:        getEnv("PARENT_PORTAL_LINK", "https://suwacare.lk/parent-portal"),
 	}, nil
 }
 

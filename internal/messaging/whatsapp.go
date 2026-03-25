@@ -22,6 +22,7 @@ const (
 
 type WhatsAppSender interface {
 	SendOTP(ctx context.Context, toPhone, otp string, ttl time.Duration) error
+	SendMessage(ctx context.Context, toPhone, message string) error
 }
 
 type LogWhatsAppSender struct{}
@@ -32,6 +33,11 @@ func NewLogWhatsAppSender() *LogWhatsAppSender {
 
 func (s *LogWhatsAppSender) SendOTP(_ context.Context, toPhone, otp string, ttl time.Duration) error {
 	log.Printf("[otp-log] to=%s otp=%s ttl=%s", toPhone, otp, ttl)
+	return nil
+}
+
+func (s *LogWhatsAppSender) SendMessage(_ context.Context, toPhone, message string) error {
+	log.Printf("[msg-log] to=%s message=%q", toPhone, message)
 	return nil
 }
 
@@ -70,16 +76,28 @@ func normalizeRecipient(phone string) string {
 }
 
 func (s *TextLKSender) SendOTP(ctx context.Context, toPhone, otp string, ttl time.Duration) error {
+	msg := fmt.Sprintf("Your verification code is: %s. Valid for %d minutes.", otp, int(ttl.Minutes()))
+	if err := s.SendMessage(ctx, toPhone, msg); err != nil {
+		return fmt.Errorf("failed to send otp sms: %w", err)
+	}
+	log.Printf("[otp-sms] successfully sent to=%s ttl=%s", normalizeRecipient(toPhone), ttl)
+	return nil
+}
+
+func (s *TextLKSender) SendMessage(ctx context.Context, toPhone, message string) error {
 	recipient := normalizeRecipient(toPhone)
 	if matched, _ := regexp.MatchString(`^\d{11,15}$`, recipient); !matched {
 		return fmt.Errorf("invalid recipient phone number format: %s", toPhone)
+	}
+	if strings.TrimSpace(message) == "" {
+		return fmt.Errorf("message cannot be empty")
 	}
 
 	payload := textLKSendRequest{
 		Recipient: recipient,
 		SenderID:  textLKSenderID,
 		Type:      textLKMessageType,
-		Message:   fmt.Sprintf("Your verification code is: %s. Valid for %d minutes.", otp, int(ttl.Minutes())),
+		Message:   message,
 	}
 
 	body, err := json.Marshal(payload)
@@ -97,7 +115,7 @@ func (s *TextLKSender) SendOTP(ctx context.Context, toPhone, otp string, ttl tim
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send otp sms: %w", err)
+		return err
 	}
 	defer resp.Body.Close()
 
@@ -106,6 +124,6 @@ func (s *TextLKSender) SendOTP(ctx context.Context, toPhone, otp string, ttl tim
 		return fmt.Errorf("textlk api returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
-	log.Printf("[otp-sms] successfully sent to=%s ttl=%s", recipient, ttl)
+	log.Printf("[sms] successfully sent to=%s", recipient)
 	return nil
 }
