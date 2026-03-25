@@ -13,9 +13,6 @@ type Config struct {
 	ChildLinkOTPTTLMin      int
 	ChildLinkOTPCooldownSec int
 	ChildLinkOTPMaxAttempts int
-	TwilioAccountSID        string
-	TwilioAuthToken         string
-	TwilioPhoneNumber       string
 }
 
 func Load() (*Config, error) {
@@ -31,9 +28,6 @@ func Load() (*Config, error) {
 		ChildLinkOTPTTLMin:      getIntEnv("CHILD_LINK_OTP_TTL_MIN", 5),
 		ChildLinkOTPCooldownSec: getIntEnv("CHILD_LINK_OTP_COOLDOWN_SEC", 60),
 		ChildLinkOTPMaxAttempts: getIntEnv("CHILD_LINK_OTP_MAX_ATTEMPTS", 5),
-		TwilioAccountSID:        getEnv("TWILIO_ACCOUNT_SID", ""),
-		TwilioAuthToken:         getEnv("TWILIO_AUTH_TOKEN", ""),
-		TwilioPhoneNumber:       getEnv("TWILIO_PHONE_NUMBER", ""),
 	}, nil
 }
 

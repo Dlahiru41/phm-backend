@@ -1,15 +1,23 @@
 package messaging
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
+)
 
-	twilioClient "github.com/twilio/twilio-go"
-	openapi "github.com/twilio/twilio-go/rest/api/v2010"
+const (
+	textLKSendURL     = "https://app.text.lk/api/v3/sms/send"
+	textLKBearerToken = "3955|LBMYZvFC98gojA1FhAKNNeWlPKF2DWfQmWXRd2QR4e3dd92e"
+	textLKSenderID    = "TextLKDemo"
+	textLKMessageType = "plain"
 )
 
 type WhatsAppSender interface {
@@ -23,117 +31,81 @@ func NewLogWhatsAppSender() *LogWhatsAppSender {
 }
 
 func (s *LogWhatsAppSender) SendOTP(_ context.Context, toPhone, otp string, ttl time.Duration) error {
-	log.Printf("[whatsapp-otp] to=%s otp=%s ttl=%s", toPhone, otp, ttl)
+	log.Printf("[otp-log] to=%s otp=%s ttl=%s", toPhone, otp, ttl)
 	return nil
 }
 
-// TwilioWhatsAppSender implements WhatsAppSender using Twilio API
-type TwilioWhatsAppSender struct {
-	client      *twilioClient.RestClient
-	phoneNumber string
+type TextLKSender struct {
+	httpClient *http.Client
 }
 
-// NewTwilioWhatsAppSender creates a new Twilio WhatsApp sender
-func NewTwilioWhatsAppSender(accountSID, authToken, phoneNumber string) (*TwilioWhatsAppSender, error) {
-	if accountSID == "" || authToken == "" || phoneNumber == "" {
-		return nil, fmt.Errorf("twilio credentials and phone number are required")
+func NewTextLKSender() *TextLKSender {
+	return &TextLKSender{
+		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
-
-	// Sanitize phone number - remove spaces, dashes, parentheses
-	sanitizedPhone := sanitizePhoneNumber(phoneNumber)
-	if sanitizedPhone == "" {
-		return nil, fmt.Errorf("invalid phone number format: %s", phoneNumber)
-	}
-
-	client := twilioClient.NewRestClientWithParams(twilioClient.ClientParams{
-		Username: accountSID,
-		Password: authToken,
-	})
-
-	log.Printf("[twilio-init] Initialized with phone number: %s (original: %s)", sanitizedPhone, phoneNumber)
-
-	return &TwilioWhatsAppSender{
-		client:      client,
-		phoneNumber: sanitizedPhone,
-	}, nil
 }
 
-// sanitizePhoneNumber removes spaces, dashes, and parentheses from phone numbers
-// Returns phone number in format: +<country_code><number>
-func sanitizePhoneNumber(phone string) string {
-	// Remove all non-digit characters except leading +
-	var result strings.Builder
-	hasPlus := false
+type textLKSendRequest struct {
+	Recipient string `json:"recipient"`
+	SenderID  string `json:"sender_id"`
+	Type      string `json:"type"`
+	Message   string `json:"message"`
+}
 
-	for i, char := range phone {
-		if char == '+' && i == 0 {
-			result.WriteRune(char)
-			hasPlus = true
-		} else if char >= '0' && char <= '9' {
-			result.WriteRune(char)
+// normalizeRecipient converts input to a numeric recipient acceptable by TextLK.
+func normalizeRecipient(phone string) string {
+	var b strings.Builder
+	for _, ch := range phone {
+		if ch >= '0' && ch <= '9' {
+			b.WriteRune(ch)
 		}
 	}
 
-	sanitized := result.String()
-	if sanitized == "" {
-		return ""
+	digits := b.String()
+	if len(digits) == 10 && strings.HasPrefix(digits, "0") {
+		return "94" + digits[1:]
 	}
 
-	// Ensure it starts with +
-	if !hasPlus {
-		sanitized = "+" + sanitized
-	}
-
-	// Validate format: should be +<digits>
-	matched, _ := regexp.MatchString(`^\+\d{10,15}$`, sanitized)
-	if !matched {
-		log.Printf("[phone-validation] Invalid phone format: %s (sanitized: %s)", phone, sanitized)
-		return ""
-	}
-
-	return sanitized
+	return digits
 }
 
-// SendOTP sends an OTP via WhatsApp using Twilio
-func (s *TwilioWhatsAppSender) SendOTP(ctx context.Context, toPhone, otp string, ttl time.Duration) error {
-	// Sanitize the recipient phone number
-	sanitizedTo := sanitizePhoneNumber(toPhone)
-	if sanitizedTo == "" {
-		log.Printf("[whatsapp-error] invalid recipient phone format: %s", toPhone)
+func (s *TextLKSender) SendOTP(ctx context.Context, toPhone, otp string, ttl time.Duration) error {
+	recipient := normalizeRecipient(toPhone)
+	if matched, _ := regexp.MatchString(`^\d{11,15}$`, recipient); !matched {
 		return fmt.Errorf("invalid recipient phone number format: %s", toPhone)
 	}
 
-	// Format the message with TTL information
-	message := fmt.Sprintf("Your verification code is: %s\nValid for %d minutes.", otp, int(ttl.Minutes()))
+	payload := textLKSendRequest{
+		Recipient: recipient,
+		SenderID:  textLKSenderID,
+		Type:      textLKMessageType,
+		Message:   fmt.Sprintf("Your verification code is: %s. Valid for %d minutes.", otp, int(ttl.Minutes())),
+	}
 
-	// Create message parameters
-	params := &openapi.CreateMessageParams{}
-
-	// Format with "whatsapp:" prefix
-	fromAddr := fmt.Sprintf("whatsapp:%s", s.phoneNumber)
-	toAddr := fmt.Sprintf("whatsapp:%s", sanitizedTo)
-
-	params.SetFrom(fromAddr)
-	params.SetTo(toAddr)
-	params.SetBody(message)
-
-	log.Printf("[whatsapp-debug] From address: %s", fromAddr)
-	log.Printf("[whatsapp-debug] To address: %s", toAddr)
-	log.Printf("[whatsapp-debug] Phone number stored: '%s'", s.phoneNumber)
-	log.Printf("[whatsapp-debug] Phone number length: %d", len(s.phoneNumber))
-
-	// Send the message
-	resp, err := s.client.Api.CreateMessage(params)
+	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("[whatsapp-error] failed to send OTP to %s: %v", sanitizedTo, err)
-		return fmt.Errorf("failed to send whatsapp otp: %w", err)
+		return fmt.Errorf("failed to build sms payload: %w", err)
 	}
 
-	if resp.Sid != nil {
-		log.Printf("[whatsapp-otp] successfully sent to=%s ttl=%s (SID: %s)", sanitizedTo, ttl, *resp.Sid)
-	} else {
-		log.Printf("[whatsapp-otp] successfully sent to=%s ttl=%s", sanitizedTo, ttl)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, textLKSendURL, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("failed to create sms request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+textLKBearerToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send otp sms: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("textlk api returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
+	log.Printf("[otp-sms] successfully sent to=%s ttl=%s", recipient, ttl)
 	return nil
 }
