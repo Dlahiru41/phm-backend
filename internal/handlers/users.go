@@ -2,12 +2,17 @@ package handlers
 
 import (
 	"crypto/rand"
+	"fmt"
+	"log"
 	"net/http"
+	"strings"
 
 	"ncvms/internal/errors"
 	"ncvms/internal/middleware"
 	"ncvms/internal/response"
 	"ncvms/internal/store"
+
+	"ncvms/internal/messaging"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -15,7 +20,8 @@ import (
 )
 
 type UsersHandler struct {
-	UserStore *store.UserStore
+	UserStore      *store.UserStore
+	WhatsAppSender messaging.WhatsAppSender
 }
 
 type UpdateProfileRequest struct {
@@ -133,21 +139,21 @@ func (h *UsersHandler) UpdateSettings(c *gin.Context) {
 	response.OK(c, gin.H{"message": "Settings saved successfully."})
 }
 
-func generateTemporaryPassword() string {
-	// Generate a secure temporary password with format: TEMP-XXXXXXXX
-	// Using crypto/rand for cryptographically secure random generation
+func generateTemporaryPassword() (string, error) {
+	// Generate a secure temporary password with format: TEMP-XXXXXXXX.
 	chars := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	password := "TEMP-"
 
 	for i := 0; i < 8; i++ {
-		// Generate a random index for the chars string
 		b := make([]byte, 1)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
 		index := int(b[0]) % len(chars)
 		password += string(chars[index])
 	}
 
-	return password
+	return password, nil
 }
 
 func (h *UsersHandler) CreatePHM(c *gin.Context) {
@@ -172,6 +178,11 @@ func (h *UsersHandler) CreatePHM(c *gin.Context) {
 		return
 	}
 
+	if strings.TrimSpace(req.PhoneNumber) == "" {
+		response.ValidationError(c, "phoneNumber is required for PHM onboarding", []response.ErrorDetail{{Field: "phoneNumber", Message: "Must be provided to deliver temporary password."}})
+		return
+	}
+
 	ctx := c.Request.Context()
 
 	// Check if email already exists
@@ -189,7 +200,18 @@ func (h *UsersHandler) CreatePHM(c *gin.Context) {
 	}
 
 	// Generate temporary password
-	temporaryPassword := generateTemporaryPassword()
+	temporaryPassword, err := generateTemporaryPassword()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to generate temporary password")
+		return
+	}
+
+	if h.WhatsAppSender == nil {
+		response.AbortWithError(c, errors.New(http.StatusInternalServerError, "ERROR", "Messaging service is not configured"))
+		return
+	}
+
+	phone := strings.TrimSpace(req.PhoneNumber)
 
 	// Hash the temporary password
 	hash, err := bcrypt.GenerateFromPassword([]byte(temporaryPassword), bcrypt.DefaultCost)
@@ -212,12 +234,27 @@ func (h *UsersHandler) CreatePHM(c *gin.Context) {
 		return
 	}
 
+	message := fmt.Sprintf(
+		"Hello %s,\n\nYour PHM account has been created in SuwaCareLK.\nTemporary Password: %s\n\nPlease use this temporary password for your first login and change it immediately.\n\n- Ministry of Health, Sri Lanka",
+		strings.TrimSpace(req.Name),
+		temporaryPassword,
+	)
+
+	deliveryStatus := "sent"
+	note := "Temporary password has been sent to the provided phone number."
+	if err := h.WhatsAppSender.SendMessage(ctx, phone, message); err != nil {
+		// Account is already created; keep request successful and surface delivery issue.
+		log.Printf("[phm-onboarding-message] failed userId=%s phone=%s: %v", userID, phone, err)
+		deliveryStatus = "failed"
+		note = "PHM account created, but temporary password delivery failed. Please retry sending the password."
+	}
+
 	response.Created(c, gin.H{
-		"message":           "PHM account created successfully.",
-		"userId":            userID,
-		"employeeId":        req.EmployeeId,
-		"temporaryPassword": temporaryPassword,
-		"firstLogin":        true,
-		"note":              "Please use the temporary password for the first login and change it immediately.",
+		"message":        "PHM account created successfully.",
+		"userId":         userID,
+		"employeeId":     req.EmployeeId,
+		"firstLogin":     true,
+		"deliveryStatus": deliveryStatus,
+		"note":           note,
 	})
 }

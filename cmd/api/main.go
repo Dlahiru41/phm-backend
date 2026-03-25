@@ -40,16 +40,16 @@ func main() {
 	childStore := store.NewChildStore(pool)
 	childLinkOTPStore := store.NewChildLinkOTPStore(pool)
 
+	// OTP sender now uses TextLK SMS API.
+	whatsAppSender := messaging.NewTextLKSender()
+
 	authHandler := &handlers.AuthHandler{
 		UserStore:  usersStore,
 		AuditStore: store.NewAuditStore(pool),
 		JWTSecret:  cfg.JWTSecret,
 		JWTExpiry:  cfg.JWTExpiryHours,
 	}
-	usersHandler := &handlers.UsersHandler{UserStore: usersStore}
-
-	// OTP sender now uses TextLK SMS API.
-	whatsAppSender := messaging.NewTextLKSender()
+	usersHandler := &handlers.UsersHandler{UserStore: usersStore, WhatsAppSender: whatsAppSender}
 
 	childrenHandler := &handlers.ChildrenHandler{
 		ChildStore:        childStore,
