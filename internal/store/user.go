@@ -102,6 +102,12 @@ func (s *UserStore) ExistsByNIC(ctx context.Context, nic string) (bool, error) {
 	return n == 1, err
 }
 
+func (s *UserStore) ExistsByPhoneForOther(ctx context.Context, phone, excludeUserID string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE phone_number = $1 AND id <> $2)`, phone, excludeUserID).Scan(&exists)
+	return exists, err
+}
+
 func (s *UserStore) Create(ctx context.Context, id, email, nic, passwordHash, role, name, phone, address string) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO users (id, email, nic, password_hash, role, name, phone_number, address, language_preference)
@@ -159,5 +165,10 @@ func (s *UserStore) CreatePHM(ctx context.Context, id, employeeId, email, nic, p
 
 func (s *UserStore) CompleteFirstLogin(ctx context.Context, userID string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE users SET first_login = false, updated_at = NOW() WHERE id = $1`, userID)
+	return err
+}
+
+func (s *UserStore) UpdatePhoneNumber(ctx context.Context, userID, phone string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET phone_number = $2, updated_at = NOW() WHERE id = $1`, userID, phone)
 	return err
 }

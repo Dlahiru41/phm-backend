@@ -14,6 +14,10 @@ National Child Vaccination Management System (NCVMS) API – Go backend and Post
    psql -d ncvms -f scripts/00_schema.sql
    psql -d ncvms -f scripts/01_indexes.sql
    psql -d ncvms -f scripts/02_seed.sql
+   psql -d ncvms -f scripts/03_parent_child_linking_schema.sql
+   psql -d ncvms -f scripts/04_parent_child_linking_indexes.sql
+   psql -d ncvms -f scripts/06_mobile_change_otp_schema.sql
+   psql -d ncvms -f scripts/07_mobile_change_otp_indexes.sql
    ```
 
 See `scripts/README.md` for details.
@@ -33,6 +37,12 @@ See `scripts/README.md` for details.
    ```
 
    API listens on `http://localhost:8080` (or `PORT` from env).
+
+Optional OTP tuning env vars:
+
+- `MOBILE_CHANGE_OTP_TTL_MIN` (default `5`)
+- `MOBILE_CHANGE_OTP_COOLDOWN_SEC` (default `60`)
+- `MOBILE_CHANGE_OTP_MAX_ATTEMPTS` (default `5`)
 
 ## API base URL
 

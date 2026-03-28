@@ -39,6 +39,7 @@ func main() {
 	usersStore := store.NewUserStore(pool)
 	childStore := store.NewChildStore(pool)
 	childLinkOTPStore := store.NewChildLinkOTPStore(pool)
+	userMobileChangeOTPStore := store.NewUserMobileChangeOTPStore(pool)
 
 	// OTP sender now uses TextLK SMS API.
 	whatsAppSender := messaging.NewTextLKSender()
@@ -50,9 +51,13 @@ func main() {
 		JWTExpiry:  cfg.JWTExpiryHours,
 	}
 	usersHandler := &handlers.UsersHandler{
-		UserStore:      usersStore,
-		WhatsAppSender: whatsAppSender,
-		PHMLoginURL:    cfg.PHMLoginURL,
+		UserStore:             usersStore,
+		UserMobileChangeStore: userMobileChangeOTPStore,
+		WhatsAppSender:        whatsAppSender,
+		PHMLoginURL:           cfg.PHMLoginURL,
+		OTPTTL:                time.Duration(cfg.MobileChangeOTPTTLMin) * time.Minute,
+		OTPResendCooldown:     time.Duration(cfg.MobileChangeOTPCooldownSec) * time.Second,
+		OTPMaxAttempts:        cfg.MobileChangeOTPMaxAttempts,
 	}
 
 	childrenHandler := &handlers.ChildrenHandler{

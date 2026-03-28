@@ -33,6 +33,8 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		usersGroup.GET("/me", users.GetMe)
 		usersGroup.PUT("/me", users.UpdateMe)
 		usersGroup.PUT("/me/settings", users.UpdateSettings)
+		usersGroup.POST("/request-mobile-change", users.RequestMobileChange)
+		usersGroup.POST("/verify-mobile-change", users.VerifyMobileChange)
 		usersGroup.POST("/phm", middleware.RequireRole("moh"), users.CreatePHM)
 	}
 

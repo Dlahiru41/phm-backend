@@ -160,3 +160,15 @@ type ChildLinkOTP struct {
 	CreatedAt    time.Time
 	ConsumedAt   *time.Time
 }
+
+type UserMobileChangeOTP struct {
+	ID           string
+	UserID       string
+	NewPhone     string
+	OTPHash      string
+	ExpiresAt    time.Time
+	AttemptCount int
+	MaxAttempts  int
+	CreatedAt    time.Time
+	ConsumedAt   *time.Time
+}

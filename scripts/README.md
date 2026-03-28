@@ -1,4 +1,4 @@
-# SuwaCare LK – Database Scripts
+# SuwaCare LK - Database Scripts
 
 ## Prerequisites
 
@@ -20,12 +20,14 @@ psql -d ncvms -f scripts/01_indexes.sql
 psql -d ncvms -f scripts/02_seed.sql
 psql -d ncvms -f scripts/03_parent_child_linking_schema.sql
 psql -d ncvms -f scripts/04_parent_child_linking_indexes.sql
+psql -d ncvms -f scripts/06_mobile_change_otp_schema.sql
+psql -d ncvms -f scripts/07_mobile_change_otp_indexes.sql
 ```
 
 Or one shot:
 
 ```bash
-psql -d ncvms -f scripts/00_schema.sql -f scripts/01_indexes.sql -f scripts/02_seed.sql -f scripts/03_parent_child_linking_schema.sql -f scripts/04_parent_child_linking_indexes.sql
+psql -d ncvms -f scripts/00_schema.sql -f scripts/01_indexes.sql -f scripts/02_seed.sql -f scripts/03_parent_child_linking_schema.sql -f scripts/04_parent_child_linking_indexes.sql -f scripts/06_mobile_change_otp_schema.sql -f scripts/07_mobile_change_otp_indexes.sql
 ```
 
 ## Scripts
@@ -37,6 +39,8 @@ psql -d ncvms -f scripts/00_schema.sql -f scripts/01_indexes.sql -f scripts/02_s
 | `02_seed.sql`                         | Seed vaccines (optional)                 |
 | `03_parent_child_linking_schema.sql`  | Add WhatsApp field and OTP table         |
 | `04_parent_child_linking_indexes.sql` | Add indexes for OTP linking flow         |
+| `06_mobile_change_otp_schema.sql`     | Add OTP table for mobile number changes  |
+| `07_mobile_change_otp_indexes.sql`    | Add indexes for mobile change OTP flow   |
 
 ## Connection
 
