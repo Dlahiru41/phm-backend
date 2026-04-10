@@ -15,7 +15,7 @@ CREATE TABLE users (
     email           TEXT NOT NULL UNIQUE,
     nic             TEXT NOT NULL UNIQUE,
     password_hash   TEXT NOT NULL,
-    role            TEXT NOT NULL CHECK (role IN ('parent', 'phm', 'moh')),
+    role            TEXT NOT NULL CHECK (role IN ('parent', 'phm', 'moh', 'admin')),
     name            TEXT NOT NULL,
     phone_number    TEXT,
     address         TEXT,

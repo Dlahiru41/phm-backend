@@ -172,3 +172,29 @@ func (s *UserStore) UpdatePhoneNumber(ctx context.Context, userID, phone string)
 	_, err := s.pool.Exec(ctx, `UPDATE users SET phone_number = $2, updated_at = NOW() WHERE id = $1`, userID, phone)
 	return err
 }
+
+// CreateMOH creates a new MOH account with admin as creator
+func (s *UserStore) CreateMOH(ctx context.Context, id, employeeId, email, nic, passwordHash, name, phone, assignedArea, createdByAdminID string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO users (id, employee_id, email, nic, password_hash, role, name, phone_number, assigned_area, created_by_moh, first_login, language_preference)
+		VALUES ($1, $2, $3, $4, $5, 'moh', $6, $7, $8, $9, true, 'en')
+	`, id, employeeId, email, nic, passwordHash, name, phone, assignedArea, createdByAdminID)
+	return err
+}
+
+// IsAdmin checks if a user has admin role
+func (s *UserStore) IsAdmin(ctx context.Context, userID string) (bool, error) {
+	var role string
+	err := s.pool.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, userID).Scan(&role)
+	if err != nil {
+		return false, err
+	}
+	return role == "admin", nil
+}
+
+// CountAdminUsers returns the count of admin users in the system
+func (s *UserStore) CountAdminUsers(ctx context.Context) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin'`).Scan(&count)
+	return count, err
+}

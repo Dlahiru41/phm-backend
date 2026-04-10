@@ -11,7 +11,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 	children *handlers.ChildrenHandler, vaccines *handlers.VaccinesHandler,
 	vaccRec *handlers.VaccinationRecordsHandler, sched *handlers.SchedulesHandler, growth *handlers.GrowthHandler,
 	notif *handlers.NotificationsHandler, reports *handlers.ReportsHandler, audit *handlers.AuditHandler,
-	analytics *handlers.AnalyticsHandler) {
+	analytics *handlers.AnalyticsHandler, admin *handlers.AdminHandler) {
 
 	api := engine.Group("/api/v1")
 	authMw := middleware.AuthRequired(jwtSecret)
@@ -118,5 +118,14 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		analyticsGroup.GET("/area-performance", middleware.RequireRole("moh"), analytics.AreaPerformance)
 		analyticsGroup.GET("/phm-dashboard", middleware.RequireRole("phm"), analytics.PHMDashboard)
 		analyticsGroup.GET("/parent-dashboard", middleware.RequireRole("parent"), analytics.ParentDashboard)
+	}
+
+	// Admin (admin-only)
+	adminGroup := api.Group("/admin").Use(authMw).Use(middleware.RequireRole("admin"))
+	{
+		adminGroup.POST("/moh-accounts/request-otp", admin.RequestMOHAccountOTP)
+		adminGroup.POST("/moh-accounts/complete", admin.CompleteMOHAccount)
+		// NEW: Simplified single-step MOH account creation with temporary password
+		adminGroup.POST("/moh-accounts/create", admin.CreateMOHAccount)
 	}
 }

@@ -139,6 +139,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Prevent admin registration through public endpoint
+	if req.Role == "admin" {
+		response.Error(c, http.StatusForbidden, "FORBIDDEN", "Admin accounts cannot be created through registration")
+		return
+	}
+
 	ctx := c.Request.Context()
 	exists, _ := h.UserStore.ExistsByEmail(ctx, req.Email)
 	if exists {

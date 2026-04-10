@@ -40,6 +40,8 @@ func main() {
 	childStore := store.NewChildStore(pool)
 	childLinkOTPStore := store.NewChildLinkOTPStore(pool)
 	userMobileChangeOTPStore := store.NewUserMobileChangeOTPStore(pool)
+	mohAccountOTPStore := store.NewMOHAccountOTPStore(pool)
+	mohTempPasswordStore := store.NewMOHTempPasswordStore(pool)
 
 	// OTP sender now uses TextLK SMS API.
 	whatsAppSender := messaging.NewTextLKSender()
@@ -83,11 +85,22 @@ func main() {
 		GrowthStore: store.NewGrowthRecordStore(pool),
 		NotifyStore: store.NewNotificationStore(pool),
 	}
+	adminHandler := &handlers.AdminHandler{
+		UserStore:            usersStore,
+		MOHAccountOTPStore:   mohAccountOTPStore,
+		MOHTempPasswordStore: mohTempPasswordStore,
+		WhatsAppSender:       whatsAppSender,
+		OTPTTL:               time.Duration(cfg.MobileChangeOTPTTLMin) * time.Minute,
+		OTPResendCooldown:    time.Duration(cfg.MobileChangeOTPCooldownSec) * time.Second,
+		OTPMaxAttempts:       cfg.MobileChangeOTPMaxAttempts,
+		TempPasswordTTL:      24 * time.Hour,
+		TempPasswordLength:   12,
+	}
 
 	engine := gin.New()
 	engine.Use(gin.Logger(), middleware.Recovery())
 	router.Setup(engine, cfg.JWTSecret, authHandler, usersHandler, childrenHandler, vaccinesHandler,
-		vaccRecHandler, schedHandler, growthHandler, notifHandler, reportsHandler, auditHandler, analyticsHandler)
+		vaccRecHandler, schedHandler, growthHandler, notifHandler, reportsHandler, auditHandler, analyticsHandler, adminHandler)
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine}
 	go func() {
