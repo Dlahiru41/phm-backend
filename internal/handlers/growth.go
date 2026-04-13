@@ -14,13 +14,13 @@ type GrowthHandler struct {
 }
 
 type CreateGrowthRecordRequest struct {
-	ChildId            string   `json:"childId" binding:"required"`
-	RecordedDate       string   `json:"recordedDate" binding:"required"`
-	Height             *float64 `json:"height"`
-	Weight             *float64 `json:"weight"`
-	HeadCircumference  *float64 `json:"headCircumference"`
-	RecordedBy         string   `json:"recordedBy"`
-	Notes              string   `json:"notes"`
+	ChildId           string   `json:"childId" binding:"required"`
+	RecordedDate      string   `json:"recordedDate" binding:"required"`
+	Height            *float64 `json:"height"`
+	Weight            *float64 `json:"weight"`
+	HeadCircumference *float64 `json:"headCircumference"`
+	RecordedBy        string   `json:"recordedBy"`
+	Notes             string   `json:"notes"`
 }
 
 func (h *GrowthHandler) Create(c *gin.Context) {
@@ -62,4 +62,22 @@ func (h *GrowthHandler) List(c *gin.Context) {
 		return
 	}
 	response.OK(c, list)
+}
+
+func (h *GrowthHandler) Charts(c *gin.Context) {
+	childID := c.Query("childId")
+	if childID == "" {
+		response.ValidationError(c, "childId is required", nil)
+		return
+	}
+	charts, err := h.GrowthStore.ChartsByChildID(c.Request.Context(), childID, c.Query("startDate"), c.Query("endDate"))
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to load growth chart data"))
+		return
+	}
+	response.OK(c, charts)
 }

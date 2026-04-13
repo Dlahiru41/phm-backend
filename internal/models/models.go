@@ -101,12 +101,30 @@ type GrowthRecord struct {
 	RecordId          string    `json:"recordId"`
 	ChildId           string    `json:"childId"`
 	RecordedDate      string    `json:"recordedDate"`
+	AgeInMonths       *int      `json:"ageInMonths,omitempty"`
 	Height            *float64  `json:"height"`
 	Weight            *float64  `json:"weight"`
 	HeadCircumference *float64  `json:"headCircumference"`
+	WeightStatus      string    `json:"weightStatus,omitempty"`
+	HeightStatus      string    `json:"heightStatus,omitempty"`
 	RecordedBy        string    `json:"recordedBy"`
 	Notes             string    `json:"notes"`
 	CreatedAt         time.Time `json:"createdAt"`
+}
+
+type GrowthChartPoint struct {
+	DateOfVisit string   `json:"dateOfVisit"`
+	AgeInMonths int      `json:"ageInMonths"`
+	Value       *float64 `json:"value"`
+	Status      string   `json:"status,omitempty"`
+	Metric      string   `json:"metric"`
+}
+
+type ChildGrowthCharts struct {
+	ChildId      string             `json:"childId"`
+	WeightVsAge  []GrowthChartPoint `json:"weightVsAge"`
+	HeightVsAge  []GrowthChartPoint `json:"heightVsAge"`
+	HistoryTable []GrowthRecord     `json:"historyTable"`
 }
 
 type Notification struct {
