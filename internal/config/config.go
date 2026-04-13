@@ -18,6 +18,7 @@ type Config struct {
 	MobileChangeOTPMaxAttempts int
 	ParentPortalLink           string
 	PHMLoginURL                string
+	WHOGrowthReferenceFile     string
 }
 
 func Load() (*Config, error) {
@@ -38,6 +39,7 @@ func Load() (*Config, error) {
 		MobileChangeOTPMaxAttempts: getIntEnv("MOBILE_CHANGE_OTP_MAX_ATTEMPTS", 5),
 		ParentPortalLink:           getEnv("PARENT_PORTAL_LINK", "https://suwacare.lk/parent-portal"),
 		PHMLoginURL:                getEnv("PHM_LOGIN_URL", "https://suwacare.lk/login"),
+		WHOGrowthReferenceFile:     getEnv("WHO_GROWTH_REFERENCE_FILE", ""),
 	}, nil
 }
 

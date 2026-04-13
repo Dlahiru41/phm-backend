@@ -3,15 +3,18 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"ncvms/internal/growth"
 	"ncvms/internal/models"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type GrowthRecordStore struct {
-	pool *pgxpool.Pool
+	pool        *pgxpool.Pool
+	whoAssessor *growth.Assessor
 }
 
 type growthThreshold struct {
@@ -50,8 +53,12 @@ var heightForAgeThresholds = []growthThreshold{
 	{AgeMonth: 60, Low: 105, High: 115},
 }
 
-func NewGrowthRecordStore(pool *pgxpool.Pool) *GrowthRecordStore {
-	return &GrowthRecordStore{pool: pool}
+func NewGrowthRecordStore(pool *pgxpool.Pool, whoAssessor ...*growth.Assessor) *GrowthRecordStore {
+	var assessor *growth.Assessor
+	if len(whoAssessor) > 0 {
+		assessor = whoAssessor[0]
+	}
+	return &GrowthRecordStore{pool: pool, whoAssessor: assessor}
 }
 
 func (s *GrowthRecordStore) Create(ctx context.Context, id, childID, recordedDate, recordedBy, notes string,
@@ -66,7 +73,7 @@ func (s *GrowthRecordStore) Create(ctx context.Context, id, childID, recordedDat
 func (s *GrowthRecordStore) ByChildID(ctx context.Context, childID, startDate, endDate string) ([]models.GrowthRecord, error) {
 	q := `
 		SELECT gr.id, gr.child_id, gr.recorded_date::text, gr.height, gr.weight, gr.head_circumference,
-		       gr.recorded_by, gr.notes, gr.created_at, c.date_of_birth::text
+		       gr.recorded_by, gr.notes, gr.created_at, c.date_of_birth::text, c.gender
 		FROM growth_records gr
 		JOIN children c ON c.id = gr.child_id
 		WHERE gr.child_id = $1`
@@ -90,16 +97,15 @@ func (s *GrowthRecordStore) ByChildID(ctx context.Context, childID, startDate, e
 	var list []models.GrowthRecord
 	for rows.Next() {
 		var r models.GrowthRecord
-		var dobText string
-		err := rows.Scan(&r.RecordId, &r.ChildId, &r.RecordedDate, &r.Height, &r.Weight, &r.HeadCircumference, &r.RecordedBy, &r.Notes, &r.CreatedAt, &dobText)
+		var dobText, sex string
+		err := rows.Scan(&r.RecordId, &r.ChildId, &r.RecordedDate, &r.Height, &r.Weight, &r.HeadCircumference, &r.RecordedBy, &r.Notes, &r.CreatedAt, &dobText, &sex)
 		if err != nil {
 			return nil, err
 		}
 		ageMonths, ok := deriveAgeInMonths(dobText, r.RecordedDate)
 		if ok {
 			r.AgeInMonths = &ageMonths
-			r.WeightStatus = classifyWeightStatus(ageMonths, r.Weight)
-			r.HeightStatus = classifyHeightStatus(ageMonths, r.Height)
+			s.assignClassification(&r, sex, ageMonths)
 		}
 		list = append(list, r)
 	}
@@ -111,6 +117,7 @@ func (s *GrowthRecordStore) ChartsByChildID(ctx context.Context, childID, startD
 	if err != nil {
 		return nil, err
 	}
+	sex, _ := s.childSex(ctx, childID)
 	result := &models.ChildGrowthCharts{
 		ChildId:      childID,
 		HistoryTable: history,
@@ -126,6 +133,7 @@ func (s *GrowthRecordStore) ChartsByChildID(ctx context.Context, childID, startD
 			AgeInMonths: *record.AgeInMonths,
 			Value:       record.Weight,
 			Status:      record.WeightStatus,
+			ZScore:      record.WeightZScore,
 			Metric:      "weight",
 		})
 		result.HeightVsAge = append(result.HeightVsAge, models.GrowthChartPoint{
@@ -133,10 +141,61 @@ func (s *GrowthRecordStore) ChartsByChildID(ctx context.Context, childID, startD
 			AgeInMonths: *record.AgeInMonths,
 			Value:       record.Height,
 			Status:      record.HeightStatus,
+			ZScore:      record.HeightZScore,
 			Metric:      "height",
 		})
 	}
+	if s.whoAssessor != nil && s.whoAssessor.HasStandardData() {
+		result.WeightReference = mapReferencePoints(s.whoAssessor.Series(growth.MetricWeightForAge, sex))
+		result.HeightReference = mapReferencePoints(s.whoAssessor.Series(growth.MetricHeightForAge, sex))
+		result.ReferenceVersion = s.whoAssessor.Version()
+	}
 	return result, nil
+}
+
+func (s *GrowthRecordStore) assignClassification(r *models.GrowthRecord, sex string, ageMonths int) {
+	if s.whoAssessor != nil && s.whoAssessor.HasStandardData() {
+		weightStatus, weightZ, weightOK := s.whoAssessor.Assess(growth.MetricWeightForAge, sex, ageMonths, r.Weight)
+		heightStatus, heightZ, heightOK := s.whoAssessor.Assess(growth.MetricHeightForAge, sex, ageMonths, r.Height)
+		if weightOK {
+			r.WeightStatus = weightStatus
+			r.WeightZScore = weightZ
+		}
+		if heightOK {
+			r.HeightStatus = heightStatus
+			r.HeightZScore = heightZ
+		}
+		if weightOK || heightOK {
+			return
+		}
+	}
+	r.WeightStatus = classifyWeightStatus(ageMonths, r.Weight)
+	r.HeightStatus = classifyHeightStatus(ageMonths, r.Height)
+}
+
+func (s *GrowthRecordStore) childSex(ctx context.Context, childID string) (string, bool) {
+	var sex string
+	if err := s.pool.QueryRow(ctx, `SELECT gender FROM children WHERE id = $1`, childID).Scan(&sex); err != nil {
+		return "", false
+	}
+	return sex, true
+}
+
+func mapReferencePoints(points []growth.ReferencePoint) []models.GrowthReferencePoint {
+	out := make([]models.GrowthReferencePoint, 0, len(points))
+	for _, p := range points {
+		out = append(out, models.GrowthReferencePoint{
+			AgeInMonths: p.AgeMonth,
+			SDNeg3:      p.SDNeg3,
+			SDNeg2:      p.SDNeg2,
+			SDNeg1:      p.SDNeg1,
+			Median:      p.Median,
+			SDPos1:      p.SDPos1,
+			SDPos2:      p.SDPos2,
+			SDPos3:      p.SDPos3,
+		})
+	}
+	return out
 }
 
 func deriveAgeInMonths(dateOfBirth, visitDate string) (int, bool) {
@@ -213,4 +272,69 @@ func matchThreshold(ageInMonths int, thresholds []growthThreshold) growthThresho
 		break
 	}
 	return selected
+}
+
+func (s *GrowthRecordStore) HasWHOReference() bool {
+	return s.whoAssessor != nil && s.whoAssessor.HasStandardData()
+}
+
+func (s *GrowthRecordStore) WHOPayloadByChildID(ctx context.Context, childID, startDate, endDate string) (*models.ChildWHOGrowthPayload, error) {
+	history, err := s.ByChildID(ctx, childID, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	sex, ok := s.childSex(ctx, childID)
+	if !ok {
+		return nil, nil
+	}
+	payload := &models.ChildWHOGrowthPayload{
+		Version:      "prototype-threshold-fallback",
+		Metadata:     map[string]string{},
+		ChildID:      childID,
+		Sex:          strings.ToLower(sex),
+		Indicators:   map[string][]models.GrowthReferencePoint{},
+		Observations: make([]models.ChildGrowthWHOObservation, 0, len(history)),
+	}
+
+	for _, r := range history {
+		if r.AgeInMonths == nil {
+			continue
+		}
+		payload.Observations = append(payload.Observations, models.ChildGrowthWHOObservation{
+			DateOfVisit:  r.RecordedDate,
+			AgeMonth:     *r.AgeInMonths,
+			Weight:       r.Weight,
+			Height:       r.Height,
+			WeightStatus: r.WeightStatus,
+			HeightStatus: r.HeightStatus,
+			WeightZScore: r.WeightZScore,
+			HeightZScore: r.HeightZScore,
+		})
+	}
+
+	if s.HasWHOReference() {
+		payload.Version = s.whoAssessor.Version()
+		payload.Metadata = s.whoAssessor.Metadata()
+		payload.Indicators[growth.MetricWeightForAge] = mapReferencePoints(s.whoAssessor.Series(growth.MetricWeightForAge, sex))
+		payload.Indicators[growth.MetricHeightForAge] = mapReferencePoints(s.whoAssessor.Series(growth.MetricHeightForAge, sex))
+		return payload, nil
+	}
+
+	payload.Metadata["note"] = "WHO reference data file is not loaded; using simplified fallback thresholds"
+	payload.Indicators[growth.MetricWeightForAge] = thresholdToReference(weightForAgeThresholds)
+	payload.Indicators[growth.MetricHeightForAge] = thresholdToReference(heightForAgeThresholds)
+	return payload, nil
+}
+
+func thresholdToReference(thresholds []growthThreshold) []models.GrowthReferencePoint {
+	out := make([]models.GrowthReferencePoint, 0, len(thresholds))
+	for _, t := range thresholds {
+		out = append(out, models.GrowthReferencePoint{
+			AgeInMonths: t.AgeMonth,
+			SDNeg2:      t.Low,
+			Median:      (t.Low + t.High) / 2,
+			SDPos2:      t.High,
+		})
+	}
+	return out
 }

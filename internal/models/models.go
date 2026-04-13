@@ -107,6 +107,8 @@ type GrowthRecord struct {
 	HeadCircumference *float64  `json:"headCircumference"`
 	WeightStatus      string    `json:"weightStatus,omitempty"`
 	HeightStatus      string    `json:"heightStatus,omitempty"`
+	WeightZScore      *float64  `json:"weightZScore,omitempty"`
+	HeightZScore      *float64  `json:"heightZScore,omitempty"`
 	RecordedBy        string    `json:"recordedBy"`
 	Notes             string    `json:"notes"`
 	CreatedAt         time.Time `json:"createdAt"`
@@ -117,14 +119,29 @@ type GrowthChartPoint struct {
 	AgeInMonths int      `json:"ageInMonths"`
 	Value       *float64 `json:"value"`
 	Status      string   `json:"status,omitempty"`
+	ZScore      *float64 `json:"zScore,omitempty"`
 	Metric      string   `json:"metric"`
 }
 
+type GrowthReferencePoint struct {
+	AgeInMonths int     `json:"ageInMonths"`
+	SDNeg3      float64 `json:"sdNeg3"`
+	SDNeg2      float64 `json:"sdNeg2"`
+	SDNeg1      float64 `json:"sdNeg1"`
+	Median      float64 `json:"median"`
+	SDPos1      float64 `json:"sdPos1"`
+	SDPos2      float64 `json:"sdPos2"`
+	SDPos3      float64 `json:"sdPos3"`
+}
+
 type ChildGrowthCharts struct {
-	ChildId      string             `json:"childId"`
-	WeightVsAge  []GrowthChartPoint `json:"weightVsAge"`
-	HeightVsAge  []GrowthChartPoint `json:"heightVsAge"`
-	HistoryTable []GrowthRecord     `json:"historyTable"`
+	ChildId          string                 `json:"childId"`
+	WeightVsAge      []GrowthChartPoint     `json:"weightVsAge"`
+	HeightVsAge      []GrowthChartPoint     `json:"heightVsAge"`
+	WeightReference  []GrowthReferencePoint `json:"weightReference"`
+	HeightReference  []GrowthReferencePoint `json:"heightReference"`
+	HistoryTable     []GrowthRecord         `json:"historyTable"`
+	ReferenceVersion string                 `json:"referenceVersion,omitempty"`
 }
 
 type Notification struct {
@@ -189,4 +206,24 @@ type UserMobileChangeOTP struct {
 	MaxAttempts  int
 	CreatedAt    time.Time
 	ConsumedAt   *time.Time
+}
+
+type ChildGrowthWHOObservation struct {
+	DateOfVisit  string   `json:"dateOfVisit"`
+	AgeMonth     int      `json:"ageMonth"`
+	Weight       *float64 `json:"weight,omitempty"`
+	Height       *float64 `json:"height,omitempty"`
+	WeightStatus string   `json:"weightStatus,omitempty"`
+	HeightStatus string   `json:"heightStatus,omitempty"`
+	WeightZScore *float64 `json:"weightZScore,omitempty"`
+	HeightZScore *float64 `json:"heightZScore,omitempty"`
+}
+
+type ChildWHOGrowthPayload struct {
+	Version      string                            `json:"version"`
+	Metadata     map[string]string                 `json:"metadata,omitempty"`
+	ChildID      string                            `json:"childId"`
+	Sex          string                            `json:"sex,omitempty"`
+	Indicators   map[string][]GrowthReferencePoint `json:"indicators"`
+	Observations []ChildGrowthWHOObservation       `json:"observations"`
 }

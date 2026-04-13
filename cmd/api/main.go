@@ -12,6 +12,7 @@ import (
 
 	"ncvms/internal/config"
 	"ncvms/internal/db"
+	"ncvms/internal/growth"
 	"ncvms/internal/handlers"
 	"ncvms/internal/messaging"
 	"ncvms/internal/middleware"
@@ -27,6 +28,15 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("config:", err)
+	}
+
+	var whoAssessor *growth.Assessor
+	if cfg.WHOGrowthReferenceFile != "" {
+		whoAssessor, err = growth.LoadAssessorFromFile(cfg.WHOGrowthReferenceFile)
+		if err != nil {
+			log.Fatal("who reference:", err)
+		}
+		log.Printf("loaded WHO growth reference: %s", whoAssessor.Version())
 	}
 
 	ctx := context.Background()
@@ -75,14 +85,15 @@ func main() {
 	vaccinesHandler := &handlers.VaccinesHandler{VaccineStore: store.NewVaccineStore(pool)}
 	vaccRecHandler := &handlers.VaccinationRecordsHandler{RecordStore: store.NewVaccinationRecordStore(pool)}
 	schedHandler := &handlers.SchedulesHandler{ScheduleStore: store.NewScheduleStore(pool)}
-	growthHandler := &handlers.GrowthHandler{GrowthStore: store.NewGrowthRecordStore(pool)}
+	growthStore := store.NewGrowthRecordStore(pool, whoAssessor)
+	growthHandler := &handlers.GrowthHandler{GrowthStore: growthStore}
 	notifHandler := &handlers.NotificationsHandler{NotificationStore: store.NewNotificationStore(pool)}
 	reportsHandler := &handlers.ReportsHandler{ReportStore: store.NewReportStore(pool)}
 	auditHandler := &handlers.AuditHandler{AuditStore: store.NewAuditStore(pool)}
 	analyticsHandler := &handlers.AnalyticsHandler{
 		ChildStore:  childStore,
 		RecordStore: store.NewVaccinationRecordStore(pool),
-		GrowthStore: store.NewGrowthRecordStore(pool),
+		GrowthStore: growthStore,
 		NotifyStore: store.NewNotificationStore(pool),
 	}
 	adminHandler := &handlers.AdminHandler{

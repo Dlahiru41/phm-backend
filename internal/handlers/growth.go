@@ -81,3 +81,25 @@ func (h *GrowthHandler) Charts(c *gin.Context) {
 	}
 	response.OK(c, charts)
 }
+
+func (h *GrowthHandler) WHOByChildID(c *gin.Context) {
+	childID := c.Param("childId")
+	if childID == "" {
+		response.ValidationError(c, "childId is required", nil)
+		return
+	}
+	payload, err := h.GrowthStore.WHOPayloadByChildID(c.Request.Context(), childID, c.Query("startDate"), c.Query("endDate"))
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to load WHO growth payload"))
+		return
+	}
+	if payload == nil {
+		response.AbortWithError(c, errors.ErrNotFound)
+		return
+	}
+	response.OK(c, payload)
+}

@@ -1,0 +1,62 @@
+{
+  "version": "WHO Child Growth Standards 2006",
+  "metadata": {
+    "source": "https://www.who.int/tools/child-growth-standards",
+    "note": "Replace this sample with the full official 0-60 month dataset before production use"
+  },
+  "indicators": {
+    "weight_for_age": {
+      "male": [
+        {
+          "ageMonth": 0,
+          "sdNeg3": 2.0,
+          "sdNeg2": 2.5,
+          "sdNeg1": 2.9,
+          "median": 3.3,
+          "sdPos1": 3.9,
+          "sdPos2": 4.4,
+          "sdPos3": 5.0
+        }
+      ],
+      "female": [
+        {
+          "ageMonth": 0,
+          "sdNeg3": 1.9,
+          "sdNeg2": 2.4,
+          "sdNeg1": 2.8,
+          "median": 3.2,
+          "sdPos1": 3.7,
+          "sdPos2": 4.2,
+          "sdPos3": 4.8
+        }
+      ]
+    },
+    "height_for_age": {
+      "male": [
+        {
+          "ageMonth": 0,
+          "sdNeg3": 44.2,
+          "sdNeg2": 46.1,
+          "sdNeg1": 48.0,
+          "median": 49.9,
+          "sdPos1": 51.8,
+          "sdPos2": 53.7,
+          "sdPos3": 55.6
+        }
+      ],
+      "female": [
+        {
+          "ageMonth": 0,
+          "sdNeg3": 43.6,
+          "sdNeg2": 45.4,
+          "sdNeg1": 47.3,
+          "median": 49.1,
+          "sdPos1": 51.0,
+          "sdPos2": 52.9,
+          "sdPos3": 54.7
+        }
+      ]
+    }
+  }
+}
+

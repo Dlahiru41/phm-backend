@@ -85,6 +85,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		growthGroup.POST("", middleware.RequireRole("phm"), growth.Create)
 		growthGroup.GET("", growth.List)
 		growthGroup.GET("/charts", growth.Charts)
+		growthGroup.GET("/:childId/who-payload", growth.WHOByChildID)
 	}
 
 	// Notifications
