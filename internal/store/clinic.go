@@ -99,28 +99,105 @@ func (s *ClinicStore) ListByPHM(ctx context.Context, phmID string, fromDate, toD
 
 func (s *ClinicStore) GetDueChildren(ctx context.Context, clinicID string) ([]models.DueChild, error) {
 	rows, err := s.pool.Query(ctx, `
+		WITH clinic_scope AS (
+			SELECT id, clinic_date, lower(trim(gn_division)) AS gn_key
+			FROM clinic_schedules
+			WHERE id = $1
+		),
+		latest_records AS (
+			SELECT
+				vr.child_id,
+				vr.vaccine_id,
+				vr.dose_number,
+				vr.next_due_date,
+				vr.status,
+				ROW_NUMBER() OVER (
+					PARTITION BY vr.child_id, vr.vaccine_id
+					ORDER BY vr.administered_date DESC, vr.created_at DESC
+				) AS rn
+			FROM vaccination_records vr
+			WHERE vr.next_due_date IS NOT NULL
+		),
+		due_from_schedules AS (
+			SELECT
+				c.id AS child_id,
+				c.first_name,
+				c.last_name,
+				c.registration_number,
+				c.date_of_birth,
+				v.name AS vaccine_name,
+				vs.due_date AS next_due_date,
+				c.parent_id,
+				p.name AS parent_name,
+				p.phone_number,
+				lr.dose_number,
+				1 AS source_rank
+			FROM clinic_scope cs
+			JOIN children c ON lower(trim(c.gn_division)) = cs.gn_key
+			JOIN vaccination_schedules vs ON vs.child_id = c.id
+			JOIN vaccines v ON v.id = vs.vaccine_id
+			LEFT JOIN users p ON p.id = c.parent_id
+			LEFT JOIN latest_records lr ON lr.child_id = c.id AND lr.vaccine_id = vs.vaccine_id AND lr.rn = 1
+			WHERE vs.status IN ('pending', 'scheduled', 'missed')
+			  AND vs.due_date <= cs.clinic_date
+		),
+		due_from_records AS (
+			SELECT
+				c.id AS child_id,
+				c.first_name,
+				c.last_name,
+				c.registration_number,
+				c.date_of_birth,
+				v.name AS vaccine_name,
+				lr.next_due_date,
+				c.parent_id,
+				p.name AS parent_name,
+				p.phone_number,
+				lr.dose_number,
+				2 AS source_rank
+			FROM clinic_scope cs
+			JOIN children c ON lower(trim(c.gn_division)) = cs.gn_key
+			JOIN latest_records lr ON lr.child_id = c.id AND lr.rn = 1
+			JOIN vaccines v ON v.id = lr.vaccine_id
+			LEFT JOIN users p ON p.id = c.parent_id
+			WHERE lr.status <> 'cancelled'
+			  AND lr.next_due_date <= cs.clinic_date
+		),
+		combined_due AS (
+			SELECT * FROM due_from_schedules
+			UNION ALL
+			SELECT * FROM due_from_records
+		),
+		dedup_due AS (
+			SELECT DISTINCT ON (child_id, vaccine_name, next_due_date)
+				child_id,
+				first_name,
+				last_name,
+				registration_number,
+				date_of_birth,
+				vaccine_name,
+				next_due_date,
+				parent_id,
+				parent_name,
+				phone_number,
+				dose_number
+			FROM combined_due
+			ORDER BY child_id, vaccine_name, next_due_date, source_rank
+		)
 		SELECT
-			c.id,
-			c.first_name,
-			c.last_name,
-			c.registration_number,
-			c.date_of_birth::text,
-			v.name,
-			vs.due_date::text,
-			c.parent_id,
-			p.name,
-			p.phone_number,
-			vr.dose_number
-		FROM clinic_schedules cs
-		JOIN children c ON c.gn_division = cs.gn_division
-		JOIN vaccination_schedules vs ON vs.child_id = c.id
-		JOIN vaccines v ON v.id = vs.vaccine_id
-		LEFT JOIN users p ON p.id = c.parent_id
-		LEFT JOIN vaccination_records vr ON vr.child_id = c.id AND vr.vaccine_id = vs.vaccine_id
-		WHERE cs.id = $1
-		  AND vs.status IN ('pending', 'scheduled', 'missed')
-		  AND vs.due_date BETWEEN (cs.clinic_date - INTERVAL '7 days') AND cs.clinic_date
-		ORDER BY c.id, vs.due_date ASC
+			child_id,
+			first_name,
+			last_name,
+			registration_number,
+			date_of_birth::text,
+			vaccine_name,
+			next_due_date::text,
+			parent_id,
+			parent_name,
+			phone_number,
+			dose_number
+		FROM dedup_due
+		ORDER BY next_due_date ASC, child_id ASC
 	`, clinicID)
 	if err != nil {
 		return nil, err
