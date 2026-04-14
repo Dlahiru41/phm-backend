@@ -17,10 +17,10 @@ type NotificationsHandler struct {
 }
 
 type CreateNotificationRequest struct {
-	RecipientId      string  `json:"recipientId" binding:"required"`
-	Type             string  `json:"type" binding:"required,oneof=reminder missed upcoming info vaccination_due growth_record"`
-	Message          string  `json:"message" binding:"required"`
-	RelatedChildId   *string `json:"relatedChildId"`
+	RecipientId    string  `json:"recipientId" binding:"required"`
+	Type           string  `json:"type" binding:"required,oneof=reminder missed upcoming info vaccination_due growth_record clinic_reminder"`
+	Message        string  `json:"message" binding:"required"`
+	RelatedChildId *string `json:"relatedChildId"`
 }
 
 func (h *NotificationsHandler) List(c *gin.Context) {

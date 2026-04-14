@@ -227,3 +227,38 @@ type ChildWHOGrowthPayload struct {
 	Indicators   map[string][]GrowthReferencePoint `json:"indicators"`
 	Observations []ChildGrowthWHOObservation       `json:"observations"`
 }
+
+type ClinicSchedule struct {
+	ClinicId    string    `json:"clinicId"`
+	PhmId       string    `json:"phmId"`
+	ClinicDate  string    `json:"clinicDate"`
+	GnDivision  string    `json:"gnDivision"`
+	Location    string    `json:"location"`
+	Description string    `json:"description,omitempty"`
+	Status      string    `json:"status"` // 'scheduled', 'completed', 'cancelled'
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type DueChild struct {
+	ChildId            string  `json:"childId"`
+	FirstName          string  `json:"firstName"`
+	LastName           string  `json:"lastName"`
+	RegistrationNumber string  `json:"registrationNumber"`
+	DateOfBirth        string  `json:"dateOfBirth"`
+	VaccineName        string  `json:"vaccineName"`
+	NextDueDate        string  `json:"nextDueDate"`
+	ParentId           *string `json:"parentId,omitempty"`
+	ParentName         *string `json:"parentName,omitempty"`
+	ParentPhone        *string `json:"parentPhone,omitempty"`
+	DoseNumber         *int    `json:"doseNumber,omitempty"`
+}
+
+type ClinicChild struct {
+	ClinicChildId string    `json:"clinicChildId"`
+	ClinicId      string    `json:"clinicId"`
+	ChildId       string    `json:"childId"`
+	Attended      bool      `json:"attended"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}

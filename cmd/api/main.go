@@ -107,11 +107,15 @@ func main() {
 		TempPasswordTTL:      24 * time.Hour,
 		TempPasswordLength:   12,
 	}
+	clinicHandler := &handlers.ClinicHandler{
+		ClinicStore:       store.NewClinicStore(pool),
+		NotificationStore: store.NewNotificationStore(pool),
+	}
 
 	engine := gin.New()
 	engine.Use(gin.Logger(), middleware.Recovery())
 	router.Setup(engine, cfg.JWTSecret, authHandler, usersHandler, childrenHandler, vaccinesHandler,
-		vaccRecHandler, schedHandler, growthHandler, notifHandler, reportsHandler, auditHandler, analyticsHandler, adminHandler)
+		vaccRecHandler, schedHandler, growthHandler, notifHandler, reportsHandler, auditHandler, analyticsHandler, adminHandler, clinicHandler)
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine}
 	go func() {

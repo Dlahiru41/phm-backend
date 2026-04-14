@@ -11,7 +11,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 	children *handlers.ChildrenHandler, vaccines *handlers.VaccinesHandler,
 	vaccRec *handlers.VaccinationRecordsHandler, sched *handlers.SchedulesHandler, growth *handlers.GrowthHandler,
 	notif *handlers.NotificationsHandler, reports *handlers.ReportsHandler, audit *handlers.AuditHandler,
-	analytics *handlers.AnalyticsHandler, admin *handlers.AdminHandler) {
+	analytics *handlers.AnalyticsHandler, admin *handlers.AdminHandler, clinic *handlers.ClinicHandler) {
 
 	api := engine.Group("/api/v1")
 	authMw := middleware.AuthRequired(jwtSecret)
@@ -129,5 +129,17 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		adminGroup.POST("/moh-accounts/complete", admin.CompleteMOHAccount)
 		// NEW: Simplified single-step MOH account creation with temporary password
 		adminGroup.POST("/moh-accounts/create", admin.CreateMOHAccount)
+	}
+
+	// Clinics
+	clinicGroup := api.Group("/clinics").Use(authMw)
+	{
+		clinicGroup.POST("", middleware.RequireRole("phm"), clinic.CreateClinic)
+		clinicGroup.GET("/my", middleware.RequireRole("phm"), clinic.ListMyClinics)
+		clinicGroup.GET("/:clinicId", clinic.GetClinic)
+		clinicGroup.GET("/:clinicId/due-children", clinic.GetDueChildren)
+		clinicGroup.GET("/:clinicId/children", clinic.GetClinicChildren)
+		clinicGroup.PUT("/:clinicId/status", middleware.RequireRole("phm", "moh"), clinic.UpdateClinicStatus)
+		clinicGroup.POST("/:clinicId/attendance", middleware.RequireRole("phm", "moh"), clinic.UpdateAttendance)
 	}
 }
