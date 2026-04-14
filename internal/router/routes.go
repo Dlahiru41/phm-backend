@@ -31,6 +31,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 	usersGroup := api.Group("/users").Use(authMw)
 	{
 		usersGroup.GET("/me", users.GetMe)
+		usersGroup.GET("/me/assigned-area", middleware.RequireRole("phm"), users.GetMyAssignedArea)
 		usersGroup.PUT("/me", users.UpdateMe)
 		usersGroup.PUT("/me/settings", users.UpdateSettings)
 		usersGroup.POST("/request-mobile-change", users.RequestMobileChange)

@@ -88,6 +88,34 @@ func (h *UsersHandler) GetMe(c *gin.Context) {
 	})
 }
 
+func (h *UsersHandler) GetMyAssignedArea(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil {
+		response.AbortWithError(c, errors.ErrUnauthorized)
+		return
+	}
+
+	user, err := h.UserStore.GetByID(c.Request.Context(), claims.UserId)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.ErrNotFound)
+		return
+	}
+
+	if user.AssignedArea == nil || strings.TrimSpace(*user.AssignedArea) == "" {
+		response.AbortWithError(c, errors.New(http.StatusNotFound, "NOT_FOUND", "Assigned area not found"))
+		return
+	}
+
+	response.OK(c, gin.H{
+		"userId":       user.UserId,
+		"assignedArea": strings.TrimSpace(*user.AssignedArea),
+	})
+}
+
 func (h *UsersHandler) UpdateMe(c *gin.Context) {
 	claims := middleware.GetClaims(c)
 	if claims == nil {
