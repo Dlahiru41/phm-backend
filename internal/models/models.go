@@ -262,3 +262,15 @@ type ClinicChild struct {
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
+
+type ParentDueVaccination struct {
+	ClinicId           string `json:"clinicId"`
+	ClinicDate         string `json:"clinicDate"`
+	ClinicLocation     string `json:"clinicLocation"`
+	ChildId            string `json:"childId"`
+	ChildName          string `json:"childName"`
+	RegistrationNumber string `json:"registrationNumber"`
+	VaccineName        string `json:"vaccineName"`
+	NextDueDate        string `json:"nextDueDate"`
+	ClinicReminder     string `json:"clinicReminder"`
+}

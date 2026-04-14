@@ -395,3 +395,40 @@ func (h *ClinicHandler) GetClinicChildren(c *gin.Context) {
 
 	response.OK(c, clinicChildren)
 }
+
+// ListParentDueVaccinations returns due vaccinations for the authenticated parent's linked children
+// when those children have an upcoming scheduled clinic.
+func (h *ClinicHandler) ListParentDueVaccinations(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil || claims.Role != "parent" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+
+	items, err := h.ClinicStore.ListParentDueVaccinations(c.Request.Context(), claims.UserId)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to fetch due vaccinations"))
+		return
+	}
+
+	if items == nil {
+		items = []models.ParentDueVaccination{}
+	}
+
+	for i := range items {
+		childName := strings.TrimSpace(items[i].ChildName)
+		if childName == "" {
+			childName = "Your child"
+		}
+		items[i].ClinicReminder = fmt.Sprintf("%s has a vaccination due. Please go to the scheduled clinic at %s on %s.", childName, items[i].ClinicLocation, items[i].ClinicDate)
+	}
+
+	response.OK(c, gin.H{
+		"count": len(items),
+		"items": items,
+	})
+}

@@ -137,6 +137,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 	{
 		clinicGroup.POST("", middleware.RequireRole("phm"), clinic.CreateClinic)
 		clinicGroup.GET("/my", middleware.RequireRole("phm"), clinic.ListMyClinics)
+		clinicGroup.GET("/parent/due-vaccinations", middleware.RequireRole("parent"), clinic.ListParentDueVaccinations)
 		clinicGroup.GET("/:clinicId", clinic.GetClinic)
 		clinicGroup.GET("/:clinicId/due-children", clinic.GetDueChildren)
 		clinicGroup.GET("/:clinicId/children", clinic.GetClinicChildren)

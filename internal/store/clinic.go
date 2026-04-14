@@ -291,3 +291,125 @@ func (s *ClinicStore) UpdateClinicChildAttendance(ctx context.Context, clinicID,
 	}
 	return nil
 }
+
+func (s *ClinicStore) ListParentDueVaccinations(ctx context.Context, parentID string) ([]models.ParentDueVaccination, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH parent_clinics AS (
+			SELECT
+				cs.id AS clinic_id,
+				cs.clinic_date,
+				cs.location,
+				c.id AS child_id,
+				TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS child_name,
+				c.registration_number
+			FROM clinic_children cc
+			JOIN clinic_schedules cs ON cs.id = cc.clinic_id
+			JOIN children c ON c.id = cc.child_id
+			WHERE c.parent_id = $1
+			  AND cs.status = 'scheduled'
+			  AND cs.clinic_date >= CURRENT_DATE
+		),
+		latest_records AS (
+			SELECT
+				vr.child_id,
+				vr.vaccine_id,
+				vr.next_due_date,
+				vr.status,
+				ROW_NUMBER() OVER (
+					PARTITION BY vr.child_id, vr.vaccine_id
+					ORDER BY vr.administered_date DESC, vr.created_at DESC
+				) AS rn
+			FROM vaccination_records vr
+			WHERE vr.next_due_date IS NOT NULL
+		),
+		due_from_schedules AS (
+			SELECT
+				pc.clinic_id,
+				pc.clinic_date,
+				pc.location,
+				pc.child_id,
+				pc.child_name,
+				pc.registration_number,
+				v.name AS vaccine_name,
+				vs.due_date AS next_due_date,
+				1 AS source_rank
+			FROM parent_clinics pc
+			JOIN vaccination_schedules vs ON vs.child_id = pc.child_id
+			JOIN vaccines v ON v.id = vs.vaccine_id
+			LEFT JOIN latest_records lr ON lr.child_id = pc.child_id AND lr.vaccine_id = vs.vaccine_id AND lr.rn = 1
+			WHERE vs.status IN ('pending', 'scheduled', 'missed')
+			  AND vs.due_date <= pc.clinic_date
+		),
+		due_from_records AS (
+			SELECT
+				pc.clinic_id,
+				pc.clinic_date,
+				pc.location,
+				pc.child_id,
+				pc.child_name,
+				pc.registration_number,
+				v.name AS vaccine_name,
+				lr.next_due_date,
+				2 AS source_rank
+			FROM parent_clinics pc
+			JOIN latest_records lr ON lr.child_id = pc.child_id AND lr.rn = 1
+			JOIN vaccines v ON v.id = lr.vaccine_id
+			WHERE lr.status <> 'cancelled'
+			  AND lr.next_due_date <= pc.clinic_date
+		),
+		combined_due AS (
+			SELECT * FROM due_from_schedules
+			UNION ALL
+			SELECT * FROM due_from_records
+		),
+		dedup_due AS (
+			SELECT DISTINCT ON (clinic_id, child_id, vaccine_name, next_due_date)
+				clinic_id,
+				clinic_date,
+				location,
+				child_id,
+				child_name,
+				registration_number,
+				vaccine_name,
+				next_due_date
+			FROM combined_due
+			ORDER BY clinic_id, child_id, vaccine_name, next_due_date, source_rank
+		)
+		SELECT
+			clinic_id,
+			clinic_date::text,
+			location,
+			child_id,
+			child_name,
+			registration_number,
+			vaccine_name,
+			next_due_date::text
+		FROM dedup_due
+		ORDER BY clinic_date ASC, child_id ASC, vaccine_name ASC
+	`, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []models.ParentDueVaccination
+	for rows.Next() {
+		var item models.ParentDueVaccination
+		err := rows.Scan(
+			&item.ClinicId,
+			&item.ClinicDate,
+			&item.ClinicLocation,
+			&item.ChildId,
+			&item.ChildName,
+			&item.RegistrationNumber,
+			&item.VaccineName,
+			&item.NextDueDate,
+		)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+
+	return list, rows.Err()
+}
