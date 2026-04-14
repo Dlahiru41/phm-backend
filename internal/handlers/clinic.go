@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"ncvms/internal/errors"
@@ -99,48 +101,67 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 	}
 	log.Printf("✓ GetDueChildren returned %d children\n", len(dueChildren))
 
-	// Create clinic_children mappings
+	// Create clinic_children mappings and parent notifications.
 	uniqueChildren := make(map[string]bool)
+	notifiedParentChild := make(map[string]bool)
+	notificationCount := 0
+
 	for _, dueChild := range dueChildren {
-		if !uniqueChildren[dueChild.ChildId] {
-			clinicChild := &models.ClinicChild{
-				ClinicChildId: "cc-" + uuid.New().String()[:8],
-				ClinicId:      clinicID,
-				ChildId:       dueChild.ChildId,
-				Attended:      false,
-				CreatedAt:     time.Now(),
-				UpdatedAt:     time.Now(),
-			}
-			err := h.ClinicStore.CreateClinicChild(c.Request.Context(), clinicChild)
-			if err != nil {
-				log.Printf("WARNING: Failed to create clinic_child mapping: %v\n", err)
-			} else {
-				log.Printf("✓ Created clinic_child mapping for child: %s\n", dueChild.ChildId)
-			}
-			uniqueChildren[dueChild.ChildId] = true
-
-			// Send notification to parent if available
-			if dueChild.ParentId != nil && *dueChild.ParentId != "" {
-				clinicDateFormatted := req.ClinicDate
-				message := "Your child has an upcoming vaccination appointment at " + req.Location + " on " + clinicDateFormatted + ". Please bring your child for immunization."
-
-				notificationID := "notif-" + uuid.New().String()[:8]
-				err := h.NotificationStore.Create(c.Request.Context(), notificationID, *dueChild.ParentId, "clinic_reminder", message, &dueChild.ChildId)
-				if err != nil {
-					log.Printf("WARNING: Failed to send notification: %v\n", err)
-				} else {
-					log.Printf("✓ Notification sent to parent: %s\n", *dueChild.ParentId)
-				}
-			}
+		if uniqueChildren[dueChild.ChildId] {
+			continue
 		}
+
+		clinicChild := &models.ClinicChild{
+			ClinicChildId: "cc-" + uuid.New().String()[:8],
+			ClinicId:      clinicID,
+			ChildId:       dueChild.ChildId,
+			Attended:      false,
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		err := h.ClinicStore.CreateClinicChild(c.Request.Context(), clinicChild)
+		if err != nil {
+			log.Printf("WARNING: Failed to create clinic_child mapping: %v\n", err)
+		} else {
+			log.Printf("✓ Created clinic_child mapping for child: %s\n", dueChild.ChildId)
+		}
+		uniqueChildren[dueChild.ChildId] = true
+
+		if h.NotificationStore == nil || dueChild.ParentId == nil || strings.TrimSpace(*dueChild.ParentId) == "" {
+			continue
+		}
+
+		notifyKey := strings.TrimSpace(*dueChild.ParentId) + ":" + dueChild.ChildId
+		if notifiedParentChild[notifyKey] {
+			continue
+		}
+
+		childName := strings.TrimSpace(dueChild.FirstName + " " + dueChild.LastName)
+		if childName == "" {
+			childName = "your child"
+		}
+		message := fmt.Sprintf("%s has an upcoming vaccination clinic at %s on %s. Please attend for immunization.", childName, req.Location, req.ClinicDate)
+
+		notificationID := "notif-" + uuid.New().String()[:8]
+		err = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*dueChild.ParentId), "clinic_reminder", message, &dueChild.ChildId)
+		if err != nil {
+			log.Printf("WARNING: Failed to send notification: %v\n", err)
+			continue
+		}
+
+		notifiedParentChild[notifyKey] = true
+		notificationCount++
+		log.Printf("✓ Notification sent to parent: %s for child: %s\n", strings.TrimSpace(*dueChild.ParentId), dueChild.ChildId)
 	}
 	log.Printf("✓ All clinic_children mappings created: %d\n", len(uniqueChildren))
+	log.Printf("✓ Parent notifications sent: %d\n", notificationCount)
 
 	log.Println("=== CreateClinic SUCCESS ===")
 	response.Created(c, gin.H{
-		"clinic":      clinic,
-		"dueChildren": dueChildren,
-		"childCount":  len(uniqueChildren),
+		"clinic":                  clinic,
+		"dueChildren":             dueChildren,
+		"childCount":              len(uniqueChildren),
+		"parentNotificationCount": notificationCount,
 	})
 }
 
