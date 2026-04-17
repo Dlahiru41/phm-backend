@@ -11,7 +11,8 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 	children *handlers.ChildrenHandler, vaccines *handlers.VaccinesHandler,
 	vaccRec *handlers.VaccinationRecordsHandler, sched *handlers.SchedulesHandler, growth *handlers.GrowthHandler,
 	notif *handlers.NotificationsHandler, reports *handlers.ReportsHandler, audit *handlers.AuditHandler,
-	analytics *handlers.AnalyticsHandler, admin *handlers.AdminHandler, clinic *handlers.ClinicHandler) {
+	analytics *handlers.AnalyticsHandler, admin *handlers.AdminHandler, clinic *handlers.ClinicHandler,
+	mohDashboard *handlers.MOHDashboardHandler, mohReports *handlers.MOHReportsHandler) {
 
 	api := engine.Group("/api/v1")
 	authMw := middleware.AuthRequired(jwtSecret)
@@ -143,5 +144,27 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		clinicGroup.GET("/:clinicId/children", clinic.GetClinicChildren)
 		clinicGroup.PUT("/:clinicId/status", middleware.RequireRole("phm", "moh"), clinic.UpdateClinicStatus)
 		clinicGroup.POST("/:clinicId/attendance", middleware.RequireRole("phm", "moh"), clinic.UpdateAttendance)
+	}
+
+	// MOH Dashboard
+	mohDashboardGroup := api.Group("/moh/dashboard").Use(authMw).Use(middleware.RequireRole("moh"))
+	{
+		mohDashboardGroup.GET("/total-children", mohDashboard.TotalChildren)
+		mohDashboardGroup.GET("/gn-distribution", mohDashboard.ChildrenDistribution)
+		mohDashboardGroup.GET("/coverage", mohDashboard.VaccinationCoverage)
+		mohDashboardGroup.GET("/missed", mohDashboard.MissedVaccinations)
+		mohDashboardGroup.GET("/phm-performance", mohDashboard.PHMPerformance)
+		mohDashboardGroup.GET("/recent-children", mohDashboard.RecentChildren)
+	}
+
+	// MOH Reports
+	mohReportsGroup := api.Group("/moh/reports").Use(authMw).Use(middleware.RequireRole("moh"))
+	{
+		mohReportsGroup.GET("/coverage", mohReports.VaccinationCoverageReport)
+		mohReportsGroup.GET("/missed", mohReports.MissedVaccinationReport)
+		mohReportsGroup.GET("/phm-performance", mohReports.PHMPerformanceReport)
+		mohReportsGroup.GET("/audit", mohReports.AuditReport)
+		mohReportsGroup.GET("/:type/download", mohReports.DownloadReport)
+		mohReportsGroup.GET("/:type/data", mohReports.GetReportData)
 	}
 }

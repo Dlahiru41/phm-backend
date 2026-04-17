@@ -111,11 +111,17 @@ func main() {
 		ClinicStore:       store.NewClinicStore(pool),
 		NotificationStore: store.NewNotificationStore(pool),
 	}
+	mohDashboardHandler := &handlers.MOHDashboardHandler{
+		DashboardStore: store.NewMOHDashboardStore(pool),
+	}
+	mohReportsHandler := &handlers.MOHReportsHandler{
+		ReportStore: store.NewMOHReportStore(pool),
+	}
 
 	engine := gin.New()
 	engine.Use(gin.Logger(), middleware.Recovery())
 	router.Setup(engine, cfg.JWTSecret, authHandler, usersHandler, childrenHandler, vaccinesHandler,
-		vaccRecHandler, schedHandler, growthHandler, notifHandler, reportsHandler, auditHandler, analyticsHandler, adminHandler, clinicHandler)
+		vaccRecHandler, schedHandler, growthHandler, notifHandler, reportsHandler, auditHandler, analyticsHandler, adminHandler, clinicHandler, mohDashboardHandler, mohReportsHandler)
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine}
 	go func() {
