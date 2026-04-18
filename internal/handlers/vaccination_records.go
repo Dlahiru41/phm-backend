@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 type VaccinationRecordsHandler struct {
 	RecordStore       *store.VaccinationRecordStore
+	ChildStore        *store.ChildStore
 	ScheduleStore     *store.ScheduleStore
 	NotificationStore *store.NotificationStore
 	WhatsAppSender    messaging.WhatsAppSender
@@ -45,6 +47,30 @@ type UpdateVaccinationTrackingRequest struct {
 	AdministeredDate string `json:"administeredDate"`
 	Location         string `json:"location"`
 	Notes            string `json:"notes"`
+}
+
+type VaccinationCardPayload struct {
+	Title              string                   `json:"title"`
+	FileName           string                   `json:"fileName"`
+	GeneratedAt        string                   `json:"generatedAt"`
+	Child              VaccinationCardChild     `json:"child"`
+	VaccinationHistory []VaccinationCardHistory `json:"vaccinationHistory"`
+}
+
+type VaccinationCardChild struct {
+	ChildId            string `json:"childId"`
+	Name               string `json:"name"`
+	DateOfBirth        string `json:"dateOfBirth"`
+	RegistrationNumber string `json:"registrationNumber"`
+	Gender             string `json:"gender"`
+}
+
+type VaccinationCardHistory struct {
+	VaccineName string `json:"vaccineName"`
+	DoseNumber  *int   `json:"doseNumber,omitempty"`
+	DateGiven   string `json:"dateGiven"`
+	NextDueDate string `json:"nextDueDate,omitempty"`
+	Status      string `json:"status"`
 }
 
 func (h *VaccinationRecordsHandler) Create(c *gin.Context) {
@@ -352,6 +378,87 @@ func (h *VaccinationRecordsHandler) Delete(c *gin.Context) {
 	response.OK(c, gin.H{"message": "Vaccination record deleted successfully."})
 }
 
+// DownloadVaccinationCard returns payload data for client-side vaccination card PDF generation.
+func (h *VaccinationRecordsHandler) DownloadVaccinationCard(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil || claims.Role != "parent" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+	if h.ChildStore == nil {
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "INTERNAL_ERROR", "Child store is not configured"))
+		return
+	}
+
+	childID := strings.TrimSpace(c.Param("child_id"))
+	if childID == "" {
+		response.AbortWithError(c, errors.New(errors.ErrBadRequest.Status, "BAD_REQUEST", "child_id is required"))
+		return
+	}
+
+	child, err := h.ChildStore.GetByID(c.Request.Context(), childID)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "INTERNAL_ERROR", "Failed to load child details"))
+		return
+	}
+	if child.ParentId == nil || strings.TrimSpace(*child.ParentId) != claims.UserId {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+
+	records, err := h.RecordStore.ByChildID(c.Request.Context(), childID)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "INTERNAL_ERROR", "Failed to load vaccination records"))
+		return
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].AdministeredDate < records[j].AdministeredDate
+	})
+
+	fullName := strings.TrimSpace(strings.TrimSpace(child.FirstName) + " " + strings.TrimSpace(child.LastName))
+	if fullName == "" {
+		fullName = "-"
+	}
+
+	history := make([]VaccinationCardHistory, 0, len(records))
+	for _, record := range records {
+		item := VaccinationCardHistory{
+			VaccineName: valueOrDash(record.VaccineName),
+			DoseNumber:  record.DoseNumber,
+			DateGiven:   valueOrDash(record.AdministeredDate),
+			Status:      valueOrDash(record.Status),
+		}
+		if record.NextDueDate != nil {
+			item.NextDueDate = valueOrDash(*record.NextDueDate)
+		}
+		history = append(history, item)
+	}
+
+	payload := VaccinationCardPayload{
+		Title:       "Child Vaccination Card",
+		FileName:    fmt.Sprintf("vaccination-card-%s.pdf", child.ChildId),
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Child: VaccinationCardChild{
+			ChildId:            child.ChildId,
+			Name:               fullName,
+			DateOfBirth:        valueOrDash(child.DateOfBirth),
+			RegistrationNumber: valueOrDash(child.RegistrationNumber),
+			Gender:             valueOrDash(child.Gender),
+		},
+		VaccinationHistory: history,
+	}
+
+	response.OK(c, payload)
+}
+
 func (h *VaccinationRecordsHandler) processMissedVaccinations(c *gin.Context, phmID string) error {
 	items, err := h.ScheduleStore.MarkMissedDueVaccinations(c.Request.Context(), phmID)
 	if err != nil {
@@ -399,4 +506,26 @@ func safeChildName(name string) string {
 		return "Your child"
 	}
 	return name
+}
+
+func valueOrDash(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "-"
+	}
+	return v
+}
+
+func pointerOrDash(v *string) string {
+	if v == nil {
+		return "-"
+	}
+	return valueOrDash(*v)
+}
+
+func doseOrDash(v *int) string {
+	if v == nil {
+		return "-"
+	}
+	return strconv.Itoa(*v)
 }

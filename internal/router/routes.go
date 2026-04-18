@@ -74,6 +74,11 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		recGroup.DELETE("/:recordId", middleware.RequireRole("moh"), vaccRec.Delete)
 	}
 
+	parentGroup := api.Group("/parent").Use(authMw).Use(middleware.RequireRole("parent"))
+	{
+		parentGroup.GET("/child/:child_id/vaccination-card", vaccRec.DownloadVaccinationCard)
+	}
+
 	// Schedules
 	schedGroup := api.Group("/schedules").Use(authMw)
 	{

@@ -85,6 +85,7 @@ func main() {
 	vaccinesHandler := &handlers.VaccinesHandler{VaccineStore: store.NewVaccineStore(pool)}
 	vaccRecHandler := &handlers.VaccinationRecordsHandler{
 		RecordStore:       store.NewVaccinationRecordStore(pool),
+		ChildStore:        childStore,
 		ScheduleStore:     store.NewScheduleStore(pool),
 		NotificationStore: store.NewNotificationStore(pool),
 		WhatsAppSender:    whatsAppSender,
