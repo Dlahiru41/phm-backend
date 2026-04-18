@@ -1,10 +1,16 @@
 package handlers
 
 import (
+	"fmt"
+	"log"
 	"strconv"
+	"strings"
+	"time"
 
 	"ncvms/internal/errors"
+	"ncvms/internal/messaging"
 	"ncvms/internal/middleware"
+	"ncvms/internal/models"
 	"ncvms/internal/response"
 	"ncvms/internal/store"
 
@@ -13,21 +19,32 @@ import (
 )
 
 type VaccinationRecordsHandler struct {
-	RecordStore *store.VaccinationRecordStore
+	RecordStore       *store.VaccinationRecordStore
+	ScheduleStore     *store.ScheduleStore
+	NotificationStore *store.NotificationStore
+	WhatsAppSender    messaging.WhatsAppSender
 }
 
 type CreateVaccinationRecordRequest struct {
-	ChildId           string  `json:"childId" binding:"required"`
-	VaccineId         string  `json:"vaccineId" binding:"required"`
-	AdministeredDate  string  `json:"administeredDate" binding:"required"`
-	BatchNumber       string  `json:"batchNumber"`
-	AdministeredBy    string  `json:"administeredBy"`
-	Location          string  `json:"location"`
-	Site              string  `json:"site"`
-	DoseNumber        *int    `json:"doseNumber"`
-	NextDueDate       *string `json:"nextDueDate"`
-	Status            string  `json:"status"`
-	Notes             string  `json:"notes"`
+	ChildId          string  `json:"childId" binding:"required"`
+	VaccineId        string  `json:"vaccineId" binding:"required"`
+	AdministeredDate string  `json:"administeredDate" binding:"required"`
+	BatchNumber      string  `json:"batchNumber"`
+	AdministeredBy   string  `json:"administeredBy"`
+	Location         string  `json:"location"`
+	Site             string  `json:"site"`
+	DoseNumber       *int    `json:"doseNumber"`
+	NextDueDate      *string `json:"nextDueDate"`
+	Status           string  `json:"status"`
+	Notes            string  `json:"notes"`
+}
+
+type UpdateVaccinationTrackingRequest struct {
+	ScheduleId       string `json:"scheduleId" binding:"required"`
+	Status           string `json:"status" binding:"required,oneof=completed not_attended"`
+	AdministeredDate string `json:"administeredDate"`
+	Location         string `json:"location"`
+	Notes            string `json:"notes"`
 }
 
 func (h *VaccinationRecordsHandler) Create(c *gin.Context) {
@@ -58,6 +75,10 @@ func (h *VaccinationRecordsHandler) Create(c *gin.Context) {
 
 func (h *VaccinationRecordsHandler) List(c *gin.Context) {
 	claims := middleware.GetClaims(c)
+	if claims == nil {
+		response.AbortWithError(c, errors.ErrUnauthorized)
+		return
+	}
 	childID := c.Query("childId")
 	if childID != "" {
 		list, err := h.RecordStore.ByChildID(c.Request.Context(), childID)
@@ -94,6 +115,144 @@ func (h *VaccinationRecordsHandler) List(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"total": total, "page": page, "limit": limit, "data": list})
+}
+
+// ListDueForPHM returns due vaccinations, triggers due reminders, and marks overdue items as missed.
+func (h *VaccinationRecordsHandler) ListDueForPHM(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil || claims.Role != "phm" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+
+	if h.ScheduleStore == nil {
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Schedule store is not configured"))
+		return
+	}
+
+	if err := h.processMissedVaccinations(c, claims.UserId); err != nil {
+		log.Printf("[vaccination-due] missed processing failed phm=%s err=%v", claims.UserId, err)
+	}
+
+	items, err := h.ScheduleStore.ListDueForPHM(c.Request.Context(), claims.UserId)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to fetch due vaccinations"))
+		return
+	}
+
+	for i := range items {
+		items[i].DueNotificationText = fmt.Sprintf("%s has a vaccination due on %s. Please attend the clinic.", safeChildName(items[i].ChildName), items[i].DueDate)
+		if !items[i].ReminderSent {
+			h.sendDueVaccinationReminder(c, items[i])
+			_ = h.ScheduleStore.SetReminderSent(c.Request.Context(), items[i].ScheduleId)
+			items[i].ReminderSent = true
+		}
+	}
+
+	response.OK(c, gin.H{
+		"count": len(items),
+		"items": items,
+	})
+}
+
+// UpdateTracking allows PHM to mark vaccination as completed or not_attended.
+func (h *VaccinationRecordsHandler) UpdateTracking(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil || claims.Role != "phm" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+	if h.ScheduleStore == nil {
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Schedule store is not configured"))
+		return
+	}
+
+	var req UpdateVaccinationTrackingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if response.ValidationErrorFromBind(c, err) {
+			return
+		}
+		response.ValidationError(c, "Validation failed", nil)
+		return
+	}
+
+	sch, err := h.ScheduleStore.GetByID(c.Request.Context(), req.ScheduleId)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrNotFound.Status, "NOT_FOUND", "Schedule not found"))
+		return
+	}
+
+	if req.Status == "completed" {
+		adminDate := strings.TrimSpace(req.AdministeredDate)
+		if adminDate == "" {
+			adminDate = time.Now().Format("2006-01-02")
+		}
+		recordID := "rec-" + uuid.New().String()[:8]
+		if err := h.RecordStore.Create(
+			c.Request.Context(),
+			recordID,
+			sch.ChildId,
+			sch.VaccineId,
+			adminDate,
+			"",
+			claims.UserId,
+			strings.TrimSpace(req.Location),
+			"",
+			nil,
+			nil,
+			"administered",
+			strings.TrimSpace(req.Notes),
+		); err != nil {
+			if appErr := errors.FromErr(err); appErr != nil {
+				response.AbortWithError(c, appErr)
+				return
+			}
+			response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to record vaccination completion"))
+			return
+		}
+
+		if err := h.ScheduleStore.UpdateStatus(c.Request.Context(), sch.ScheduleId, "completed"); err != nil {
+			if appErr := errors.FromErr(err); appErr != nil {
+				response.AbortWithError(c, appErr)
+				return
+			}
+			response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to update schedule status"))
+			return
+		}
+
+		response.OK(c, gin.H{"message": "Vaccination marked as completed"})
+		return
+	}
+
+	if err := h.ScheduleStore.UpdateStatus(c.Request.Context(), sch.ScheduleId, "missed"); err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to update schedule status"))
+		return
+	}
+
+	dueItems, err := h.ScheduleStore.ListDueForPHM(c.Request.Context(), claims.UserId)
+	if err == nil {
+		for _, item := range dueItems {
+			if item.ScheduleId == sch.ScheduleId {
+				h.sendMissedVaccinationAlert(c, item)
+				_ = h.ScheduleStore.SetMissedNotified(c.Request.Context(), item.ScheduleId)
+				break
+			}
+		}
+	}
+
+	response.OK(c, gin.H{"message": "Vaccination marked as not attended"})
 }
 
 func (h *VaccinationRecordsHandler) GetByID(c *gin.Context) {
@@ -191,4 +350,53 @@ func (h *VaccinationRecordsHandler) Delete(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"message": "Vaccination record deleted successfully."})
+}
+
+func (h *VaccinationRecordsHandler) processMissedVaccinations(c *gin.Context, phmID string) error {
+	items, err := h.ScheduleStore.MarkMissedDueVaccinations(c.Request.Context(), phmID)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.MissedNotified {
+			continue
+		}
+		h.sendMissedVaccinationAlert(c, item)
+		_ = h.ScheduleStore.SetMissedNotified(c.Request.Context(), item.ScheduleId)
+	}
+	return nil
+}
+
+func (h *VaccinationRecordsHandler) sendDueVaccinationReminder(c *gin.Context, item models.PHMDueVaccination) {
+	message := fmt.Sprintf("%s has a vaccination due on %s. Please attend the clinic.", safeChildName(item.ChildName), item.DueDate)
+	if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
+		notificationID := "notif-" + uuid.New().String()[:8]
+		_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "vaccination_due", message, &item.ChildId)
+	}
+	if h.WhatsAppSender != nil && item.ParentPhone != nil && strings.TrimSpace(*item.ParentPhone) != "" {
+		if err := h.WhatsAppSender.SendMessage(c.Request.Context(), strings.TrimSpace(*item.ParentPhone), message); err != nil {
+			log.Printf("[vaccination-due] sms failed schedule=%s child=%s err=%v", item.ScheduleId, item.ChildId, err)
+		}
+	}
+}
+
+func (h *VaccinationRecordsHandler) sendMissedVaccinationAlert(c *gin.Context, item models.PHMDueVaccination) {
+	message := "Your child has missed the scheduled vaccination. Please contact your PHM."
+	if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
+		notificationID := "notif-" + uuid.New().String()[:8]
+		_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "missed_vaccination", message, &item.ChildId)
+	}
+	if h.WhatsAppSender != nil && item.ParentPhone != nil && strings.TrimSpace(*item.ParentPhone) != "" {
+		if err := h.WhatsAppSender.SendMessage(c.Request.Context(), strings.TrimSpace(*item.ParentPhone), message); err != nil {
+			log.Printf("[vaccination-missed] sms failed schedule=%s child=%s err=%v", item.ScheduleId, item.ChildId, err)
+		}
+	}
+}
+
+func safeChildName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "Your child"
+	}
+	return name
 }

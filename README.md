@@ -18,6 +18,9 @@ National Child Vaccination Management System (NCVMS) API – Go backend and Post
    psql -d ncvms -f scripts/04_parent_child_linking_indexes.sql
    psql -d ncvms -f scripts/06_mobile_change_otp_schema.sql
    psql -d ncvms -f scripts/07_mobile_change_otp_indexes.sql
+   psql -d ncvms -f scripts/12_clinic_scheduling.sql
+   psql -d ncvms -f scripts/13_clinic_notification_type.sql
+   psql -d ncvms -f scripts/14_clinic_vaccination_tracking_enhancements.sql
    ```
 
 See `scripts/README.md` for details.

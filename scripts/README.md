@@ -22,12 +22,15 @@ psql -d ncvms -f scripts/03_parent_child_linking_schema.sql
 psql -d ncvms -f scripts/04_parent_child_linking_indexes.sql
 psql -d ncvms -f scripts/06_mobile_change_otp_schema.sql
 psql -d ncvms -f scripts/07_mobile_change_otp_indexes.sql
+psql -d ncvms -f scripts/12_clinic_scheduling.sql
+psql -d ncvms -f scripts/13_clinic_notification_type.sql
+psql -d ncvms -f scripts/14_clinic_vaccination_tracking_enhancements.sql
 ```
 
 Or one shot:
 
 ```bash
-psql -d ncvms -f scripts/00_schema.sql -f scripts/01_indexes.sql -f scripts/02_seed.sql -f scripts/03_parent_child_linking_schema.sql -f scripts/04_parent_child_linking_indexes.sql -f scripts/06_mobile_change_otp_schema.sql -f scripts/07_mobile_change_otp_indexes.sql
+psql -d ncvms -f scripts/00_schema.sql -f scripts/01_indexes.sql -f scripts/02_seed.sql -f scripts/03_parent_child_linking_schema.sql -f scripts/04_parent_child_linking_indexes.sql -f scripts/06_mobile_change_otp_schema.sql -f scripts/07_mobile_change_otp_indexes.sql -f scripts/12_clinic_scheduling.sql -f scripts/13_clinic_notification_type.sql -f scripts/14_clinic_vaccination_tracking_enhancements.sql
 ```
 
 ## Scripts
@@ -41,6 +44,9 @@ psql -d ncvms -f scripts/00_schema.sql -f scripts/01_indexes.sql -f scripts/02_s
 | `04_parent_child_linking_indexes.sql` | Add indexes for OTP linking flow         |
 | `06_mobile_change_otp_schema.sql`     | Add OTP table for mobile number changes  |
 | `07_mobile_change_otp_indexes.sql`    | Add indexes for mobile change OTP flow   |
+| `12_clinic_scheduling.sql`               | Clinic schedule and attendance tables      |
+| `13_clinic_notification_type.sql`        | Add clinic reminder notification type      |
+| `14_clinic_vaccination_tracking_enhancements.sql` | Tracking status and missed alert schema |
 
 ## Connection
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"ncvms/internal/errors"
+	"ncvms/internal/messaging"
 	"ncvms/internal/middleware"
 	"ncvms/internal/models"
 	"ncvms/internal/response"
@@ -19,6 +20,7 @@ import (
 type ClinicHandler struct {
 	ClinicStore       *store.ClinicStore
 	NotificationStore *store.NotificationStore
+	WhatsAppSender    messaging.WhatsAppSender
 }
 
 type CreateClinicRequest struct {
@@ -33,34 +35,27 @@ type UpdateClinicStatusRequest struct {
 }
 
 type UpdateAttendanceRequest struct {
-	ChildId  string `json:"childId" binding:"required"`
-	Attended bool   `json:"attended"`
+	ChildId string `json:"childId" binding:"required"`
+	Status  string `json:"status" binding:"required,oneof=attended not_attended"`
 }
 
-// CreateClinic creates a new clinic and automatically identifies due children
+// CreateClinic creates a new clinic and notifies all parents in the clinic GN division.
 func (h *ClinicHandler) CreateClinic(c *gin.Context) {
-	log.Println("=== CreateClinic START ===")
-
 	claims := middleware.GetClaims(c)
 	if claims == nil {
-		log.Println("ERROR: No claims found")
 		response.AbortWithError(c, errors.ErrUnauthorized)
 		return
 	}
-	log.Printf("✓ Auth OK - PHM ID: %s\n", claims.UserId)
 
 	var req CreateClinicRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("ERROR: JSON binding failed: %v\n", err)
 		if response.ValidationErrorFromBind(c, err) {
 			return
 		}
 		response.ValidationError(c, "Validation failed", nil)
 		return
 	}
-	log.Printf("✓ Request parsed - Date: %s, GN: %s, Location: %s\n", req.ClinicDate, req.GnDivision, req.Location)
 
-	// Create clinic
 	clinicID := "clinic-" + uuid.New().String()[:8]
 	clinic := &models.ClinicSchedule{
 		ClinicId:    clinicID,
@@ -73,11 +68,8 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
-	log.Printf("✓ Clinic object created - ID: %s\n", clinicID)
 
-	err := h.ClinicStore.Create(c.Request.Context(), clinic)
-	if err != nil {
-		log.Printf("ERROR: Failed to create clinic record: %v\n", err)
+	if err := h.ClinicStore.Create(c.Request.Context(), clinic); err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
 			response.AbortWithError(c, appErr)
 			return
@@ -85,83 +77,64 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to create clinic"))
 		return
 	}
-	log.Printf("✓ Clinic record created in database\n")
 
-	// Get due children for this clinic
-	log.Printf("→ Calling GetDueChildren for clinic: %s\n", clinicID)
-	dueChildren, err := h.ClinicStore.GetDueChildren(c.Request.Context(), clinicID)
+	allChildren, err := h.ClinicStore.ListChildrenForClinic(c.Request.Context(), clinicID)
 	if err != nil {
-		log.Printf("ERROR: GetDueChildren failed: %v\n", err)
 		if appErr := errors.FromErr(err); appErr != nil {
 			response.AbortWithError(c, appErr)
 			return
 		}
-		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to fetch due children"))
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to fetch clinic children"))
 		return
 	}
-	log.Printf("✓ GetDueChildren returned %d children\n", len(dueChildren))
 
-	// Create clinic_children mappings and parent notifications.
-	uniqueChildren := make(map[string]bool)
-	notifiedParentChild := make(map[string]bool)
 	notificationCount := 0
-
-	for _, dueChild := range dueChildren {
-		if uniqueChildren[dueChild.ChildId] {
-			continue
-		}
-
+	smsCount := 0
+	for _, item := range allChildren {
 		clinicChild := &models.ClinicChild{
-			ClinicChildId: "cc-" + uuid.New().String()[:8],
-			ClinicId:      clinicID,
-			ChildId:       dueChild.ChildId,
-			Attended:      false,
-			CreatedAt:     time.Now(),
-			UpdatedAt:     time.Now(),
+			ClinicChildId:    "cc-" + uuid.New().String()[:8],
+			ClinicId:         clinicID,
+			ChildId:          item.ChildId,
+			Attended:         false,
+			AttendanceStatus: "pending",
+			MissedNotified:   false,
+			CreatedAt:        time.Now(),
+			UpdatedAt:        time.Now(),
 		}
-		err := h.ClinicStore.CreateClinicChild(c.Request.Context(), clinicChild)
-		if err != nil {
-			log.Printf("WARNING: Failed to create clinic_child mapping: %v\n", err)
-		} else {
-			log.Printf("✓ Created clinic_child mapping for child: %s\n", dueChild.ChildId)
-		}
-		uniqueChildren[dueChild.ChildId] = true
-
-		if h.NotificationStore == nil || dueChild.ParentId == nil || strings.TrimSpace(*dueChild.ParentId) == "" {
-			continue
+		if err := h.ClinicStore.CreateClinicChild(c.Request.Context(), clinicChild); err != nil {
+			log.Printf("[clinic] failed to create clinic child mapping clinic=%s child=%s err=%v", clinicID, item.ChildId, err)
 		}
 
-		notifyKey := strings.TrimSpace(*dueChild.ParentId) + ":" + dueChild.ChildId
-		if notifiedParentChild[notifyKey] {
-			continue
+		if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
+			message := fmt.Sprintf("%s has a scheduled clinic session at %s on %s.", defaultChildName(item.ChildName), req.Location, req.ClinicDate)
+			notificationID := "notif-" + uuid.New().String()[:8]
+			if err := h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "clinic_reminder", message, &item.ChildId); err == nil {
+				notificationCount++
+			}
 		}
 
-		childName := strings.TrimSpace(dueChild.FirstName + " " + dueChild.LastName)
-		if childName == "" {
-			childName = "your child"
+		if h.WhatsAppSender != nil && item.ParentPhone != nil && strings.TrimSpace(*item.ParentPhone) != "" {
+			smsMessage := fmt.Sprintf("%s has a clinic session at %s on %s. Please attend.", defaultChildName(item.ChildName), req.Location, req.ClinicDate)
+			if err := h.WhatsAppSender.SendMessage(c.Request.Context(), strings.TrimSpace(*item.ParentPhone), smsMessage); err == nil {
+				smsCount++
+			} else {
+				log.Printf("[clinic] failed to send clinic sms clinic=%s child=%s err=%v", clinicID, item.ChildId, err)
+			}
 		}
-		message := fmt.Sprintf("%s has an upcoming vaccination clinic at %s on %s. Please attend for immunization.", childName, req.Location, req.ClinicDate)
-
-		notificationID := "notif-" + uuid.New().String()[:8]
-		err = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*dueChild.ParentId), "clinic_reminder", message, &dueChild.ChildId)
-		if err != nil {
-			log.Printf("WARNING: Failed to send notification: %v\n", err)
-			continue
-		}
-
-		notifiedParentChild[notifyKey] = true
-		notificationCount++
-		log.Printf("✓ Notification sent to parent: %s for child: %s\n", strings.TrimSpace(*dueChild.ParentId), dueChild.ChildId)
 	}
-	log.Printf("✓ All clinic_children mappings created: %d\n", len(uniqueChildren))
-	log.Printf("✓ Parent notifications sent: %d\n", notificationCount)
 
-	log.Println("=== CreateClinic SUCCESS ===")
+	dueChildren, dueErr := h.ClinicStore.GetDueChildren(c.Request.Context(), clinicID)
+	if dueErr != nil {
+		log.Printf("[clinic] failed to fetch due children clinic=%s err=%v", clinicID, dueErr)
+		dueChildren = []models.DueChild{}
+	}
+
 	response.Created(c, gin.H{
 		"clinic":                  clinic,
+		"childrenInDivision":      len(allChildren),
 		"dueChildren":             dueChildren,
-		"childCount":              len(uniqueChildren),
 		"parentNotificationCount": notificationCount,
+		"parentSMSCount":          smsCount,
 	})
 }
 
@@ -222,7 +195,6 @@ func (h *ClinicHandler) GetDueChildren(c *gin.Context) {
 		return
 	}
 
-	// Verify clinic exists
 	clinic, err := h.ClinicStore.GetByID(c.Request.Context(), clinicID)
 	if err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
@@ -233,7 +205,6 @@ func (h *ClinicHandler) GetDueChildren(c *gin.Context) {
 		return
 	}
 
-	// Check authorization (PHM can only see their own clinics)
 	claims := middleware.GetClaims(c)
 	if claims != nil && claims.Role == "phm" && clinic.PhmId != claims.UserId {
 		response.AbortWithError(c, errors.ErrUnauthorized)
@@ -257,7 +228,7 @@ func (h *ClinicHandler) GetDueChildren(c *gin.Context) {
 	response.OK(c, dueChildren)
 }
 
-// UpdateClinicStatus updates the status of a clinic
+// UpdateClinicStatus updates the status of a clinic and triggers missed-clinic alerts when completed.
 func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 	clinicID := c.Param("clinicId")
 	if clinicID == "" {
@@ -274,7 +245,6 @@ func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 		return
 	}
 
-	// Verify clinic exists and user has permission
 	clinic, err := h.ClinicStore.GetByID(c.Request.Context(), clinicID)
 	if err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
@@ -291,8 +261,7 @@ func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 		return
 	}
 
-	err = h.ClinicStore.UpdateClinicStatus(c.Request.Context(), clinicID, req.Status)
-	if err != nil {
+	if err := h.ClinicStore.UpdateClinicStatus(c.Request.Context(), clinicID, req.Status); err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
 			response.AbortWithError(c, appErr)
 			return
@@ -301,12 +270,37 @@ func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 		return
 	}
 
-	// Fetch and return updated clinic
+	missedAlerts := 0
+	if req.Status == "completed" {
+		alerts, err := h.ClinicStore.MarkMissedClinicAttendance(c.Request.Context(), clinicID)
+		if err != nil {
+			log.Printf("[clinic] failed to mark missed clinic attendance clinic=%s err=%v", clinicID, err)
+		} else {
+			for _, item := range alerts {
+				message := "Your child has missed the clinic session. Please attend the next session."
+				if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
+					notificationID := "notif-" + uuid.New().String()[:8]
+					_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "missed_clinic", message, &item.ChildId)
+				}
+				if h.WhatsAppSender != nil && item.ParentPhone != nil && strings.TrimSpace(*item.ParentPhone) != "" {
+					if err := h.WhatsAppSender.SendMessage(c.Request.Context(), strings.TrimSpace(*item.ParentPhone), message); err != nil {
+						log.Printf("[clinic] failed to send missed clinic sms clinic=%s child=%s err=%v", clinicID, item.ChildId, err)
+					}
+				}
+				_ = h.ClinicStore.SetClinicChildMissedNotified(c.Request.Context(), clinicID, item.ChildId)
+				missedAlerts++
+			}
+		}
+	}
+
 	updatedClinic, _ := h.ClinicStore.GetByID(c.Request.Context(), clinicID)
-	response.OK(c, updatedClinic)
+	response.OK(c, gin.H{
+		"clinic":        updatedClinic,
+		"missedAlerted": missedAlerts,
+	})
 }
 
-// UpdateAttendance marks a child as attended
+// UpdateAttendance marks clinic attendance as attended or not_attended.
 func (h *ClinicHandler) UpdateAttendance(c *gin.Context) {
 	clinicID := c.Param("clinicId")
 	if clinicID == "" {
@@ -323,7 +317,6 @@ func (h *ClinicHandler) UpdateAttendance(c *gin.Context) {
 		return
 	}
 
-	// Verify clinic exists and user has permission
 	clinic, err := h.ClinicStore.GetByID(c.Request.Context(), clinicID)
 	if err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
@@ -340,8 +333,7 @@ func (h *ClinicHandler) UpdateAttendance(c *gin.Context) {
 		return
 	}
 
-	err = h.ClinicStore.UpdateClinicChildAttendance(c.Request.Context(), clinicID, req.ChildId, req.Attended)
-	if err != nil {
+	if err := h.ClinicStore.UpdateClinicChildAttendance(c.Request.Context(), clinicID, req.ChildId, req.Status); err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
 			response.AbortWithError(c, appErr)
 			return
@@ -361,7 +353,6 @@ func (h *ClinicHandler) GetClinicChildren(c *gin.Context) {
 		return
 	}
 
-	// Verify clinic exists
 	clinic, err := h.ClinicStore.GetByID(c.Request.Context(), clinicID)
 	if err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
@@ -372,7 +363,6 @@ func (h *ClinicHandler) GetClinicChildren(c *gin.Context) {
 		return
 	}
 
-	// Check authorization
 	claims := middleware.GetClaims(c)
 	if claims != nil && claims.Role == "phm" && clinic.PhmId != claims.UserId {
 		response.AbortWithError(c, errors.ErrUnauthorized)
@@ -431,4 +421,12 @@ func (h *ClinicHandler) ListParentDueVaccinations(c *gin.Context) {
 		"count": len(items),
 		"items": items,
 	})
+}
+
+func defaultChildName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "Your child"
+	}
+	return name
 }

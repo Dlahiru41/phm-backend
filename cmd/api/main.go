@@ -83,7 +83,12 @@ func main() {
 		ParentPortalLink:  cfg.ParentPortalLink,
 	}
 	vaccinesHandler := &handlers.VaccinesHandler{VaccineStore: store.NewVaccineStore(pool)}
-	vaccRecHandler := &handlers.VaccinationRecordsHandler{RecordStore: store.NewVaccinationRecordStore(pool)}
+	vaccRecHandler := &handlers.VaccinationRecordsHandler{
+		RecordStore:       store.NewVaccinationRecordStore(pool),
+		ScheduleStore:     store.NewScheduleStore(pool),
+		NotificationStore: store.NewNotificationStore(pool),
+		WhatsAppSender:    whatsAppSender,
+	}
 	schedHandler := &handlers.SchedulesHandler{ScheduleStore: store.NewScheduleStore(pool)}
 	growthStore := store.NewGrowthRecordStore(pool, whoAssessor)
 	growthHandler := &handlers.GrowthHandler{GrowthStore: growthStore}
@@ -110,6 +115,7 @@ func main() {
 	clinicHandler := &handlers.ClinicHandler{
 		ClinicStore:       store.NewClinicStore(pool),
 		NotificationStore: store.NewNotificationStore(pool),
+		WhatsAppSender:    whatsAppSender,
 	}
 	mohDashboardHandler := &handlers.MOHDashboardHandler{
 		DashboardStore: store.NewMOHDashboardStore(pool),

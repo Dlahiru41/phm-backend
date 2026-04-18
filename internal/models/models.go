@@ -255,12 +255,14 @@ type DueChild struct {
 }
 
 type ClinicChild struct {
-	ClinicChildId string    `json:"clinicChildId"`
-	ClinicId      string    `json:"clinicId"`
-	ChildId       string    `json:"childId"`
-	Attended      bool      `json:"attended"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ClinicChildId    string    `json:"clinicChildId"`
+	ClinicId         string    `json:"clinicId"`
+	ChildId          string    `json:"childId"`
+	Attended         bool      `json:"attended"`
+	AttendanceStatus string    `json:"attendanceStatus"`
+	MissedNotified   bool      `json:"missedNotified"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type ParentDueVaccination struct {
@@ -273,4 +275,29 @@ type ParentDueVaccination struct {
 	VaccineName        string `json:"vaccineName"`
 	NextDueDate        string `json:"nextDueDate"`
 	ClinicReminder     string `json:"clinicReminder"`
+}
+
+type PHMDueVaccination struct {
+	ScheduleId          string  `json:"scheduleId"`
+	ChildId             string  `json:"childId"`
+	ChildName           string  `json:"childName"`
+	RegistrationNumber  string  `json:"registrationNumber"`
+	VaccineId           string  `json:"vaccineId"`
+	VaccineName         string  `json:"vaccineName"`
+	DueDate             string  `json:"dueDate"`
+	Status              string  `json:"status"`
+	ParentId            *string `json:"parentId,omitempty"`
+	ParentPhone         *string `json:"parentPhone,omitempty"`
+	ReminderSent        bool    `json:"reminderSent"`
+	MissedNotified      bool    `json:"missedNotified"`
+	DueNotificationText string  `json:"dueNotificationText,omitempty"`
+}
+
+type ClinicAttendanceAlert struct {
+	ClinicId           string  `json:"clinicId"`
+	ChildId            string  `json:"childId"`
+	ChildName          string  `json:"childName"`
+	RegistrationNumber string  `json:"registrationNumber"`
+	ParentId           *string `json:"parentId,omitempty"`
+	ParentPhone        *string `json:"parentPhone,omitempty"`
 }

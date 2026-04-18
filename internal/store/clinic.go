@@ -129,7 +129,7 @@ func (s *ClinicStore) GetDueChildren(ctx context.Context, clinicID string) ([]mo
 				vs.due_date AS next_due_date,
 				c.parent_id,
 				p.name AS parent_name,
-				p.phone_number,
+				NULLIF(TRIM(COALESCE(p.phone_number, c.parent_whatsapp_number, '')), '') AS phone_number,
 				lr.dose_number,
 				1 AS source_rank
 			FROM clinic_scope cs
@@ -152,7 +152,7 @@ func (s *ClinicStore) GetDueChildren(ctx context.Context, clinicID string) ([]mo
 				lr.next_due_date,
 				c.parent_id,
 				p.name AS parent_name,
-				p.phone_number,
+				NULLIF(TRIM(COALESCE(p.phone_number, c.parent_whatsapp_number, '')), '') AS phone_number,
 				lr.dose_number,
 				2 AS source_rank
 			FROM clinic_scope cs
@@ -229,17 +229,50 @@ func (s *ClinicStore) GetDueChildren(ctx context.Context, clinicID string) ([]mo
 	return list, rows.Err()
 }
 
+func (s *ClinicStore) ListChildrenForClinic(ctx context.Context, clinicID string) ([]models.ClinicAttendanceAlert, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			$1 AS clinic_id,
+			c.id,
+			TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS child_name,
+			c.registration_number,
+			c.parent_id,
+			NULLIF(TRIM(COALESCE(u.phone_number, c.parent_whatsapp_number, '')), '') AS parent_phone
+		FROM clinic_schedules cs
+		JOIN children c ON lower(trim(c.gn_division)) = lower(trim(cs.gn_division))
+		LEFT JOIN users u ON u.id = c.parent_id
+		WHERE cs.id = $1
+		ORDER BY c.created_at ASC
+	`, clinicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []models.ClinicAttendanceAlert
+	for rows.Next() {
+		var item models.ClinicAttendanceAlert
+		if err := rows.Scan(&item.ClinicId, &item.ChildId, &item.ChildName, &item.RegistrationNumber, &item.ParentId, &item.ParentPhone); err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+	return list, rows.Err()
+}
+
 func (s *ClinicStore) CreateClinicChild(ctx context.Context, clinicChild *models.ClinicChild) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO clinic_children (id, clinic_id, child_id, attended, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, clinicChild.ClinicChildId, clinicChild.ClinicId, clinicChild.ChildId, clinicChild.Attended, clinicChild.CreatedAt, clinicChild.UpdatedAt)
+		INSERT INTO clinic_children (id, clinic_id, child_id, attended, attendance_status, missed_notified, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (clinic_id, child_id)
+		DO UPDATE SET updated_at = NOW()
+	`, clinicChild.ClinicChildId, clinicChild.ClinicId, clinicChild.ChildId, clinicChild.Attended, clinicChild.AttendanceStatus, clinicChild.MissedNotified, clinicChild.CreatedAt, clinicChild.UpdatedAt)
 	return err
 }
 
 func (s *ClinicStore) GetClinicChildren(ctx context.Context, clinicID string) ([]models.ClinicChild, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, clinic_id, child_id, attended, created_at, updated_at
+		SELECT id, clinic_id, child_id, attended, attendance_status, missed_notified, created_at, updated_at
 		FROM clinic_children
 		WHERE clinic_id = $1
 		ORDER BY created_at ASC
@@ -252,7 +285,7 @@ func (s *ClinicStore) GetClinicChildren(ctx context.Context, clinicID string) ([
 	var list []models.ClinicChild
 	for rows.Next() {
 		var c models.ClinicChild
-		err := rows.Scan(&c.ClinicChildId, &c.ClinicId, &c.ChildId, &c.Attended, &c.CreatedAt, &c.UpdatedAt)
+		err := rows.Scan(&c.ClinicChildId, &c.ClinicId, &c.ChildId, &c.Attended, &c.AttendanceStatus, &c.MissedNotified, &c.CreatedAt, &c.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -277,12 +310,15 @@ func (s *ClinicStore) UpdateClinicStatus(ctx context.Context, clinicID, status s
 	return nil
 }
 
-func (s *ClinicStore) UpdateClinicChildAttendance(ctx context.Context, clinicID, childID string, attended bool) error {
+func (s *ClinicStore) UpdateClinicChildAttendance(ctx context.Context, clinicID, childID, attendanceStatus string) error {
+	attended := attendanceStatus == "attended"
 	res, err := s.pool.Exec(ctx, `
 		UPDATE clinic_children
-		SET attended = $3, updated_at = NOW()
+		SET attended = $3,
+			attendance_status = $4,
+			updated_at = NOW()
 		WHERE clinic_id = $1 AND child_id = $2
-	`, clinicID, childID, attended)
+	`, clinicID, childID, attended, attendanceStatus)
 	if err != nil {
 		return err
 	}
@@ -290,6 +326,48 @@ func (s *ClinicStore) UpdateClinicChildAttendance(ctx context.Context, clinicID,
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (s *ClinicStore) MarkMissedClinicAttendance(ctx context.Context, clinicID string) ([]models.ClinicAttendanceAlert, error) {
+	rows, err := s.pool.Query(ctx, `
+		UPDATE clinic_children cc
+		SET attendance_status = 'missed', attended = false, updated_at = NOW()
+		FROM children c
+		LEFT JOIN users u ON u.id = c.parent_id
+		WHERE cc.child_id = c.id
+		  AND cc.clinic_id = $1
+		  AND cc.attendance_status IN ('pending', 'not_attended')
+		RETURNING
+			cc.clinic_id,
+			c.id,
+			TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS child_name,
+			c.registration_number,
+			c.parent_id,
+			NULLIF(TRIM(COALESCE(u.phone_number, c.parent_whatsapp_number, '')), '') AS parent_phone
+	`, clinicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var alerts []models.ClinicAttendanceAlert
+	for rows.Next() {
+		var item models.ClinicAttendanceAlert
+		if err := rows.Scan(&item.ClinicId, &item.ChildId, &item.ChildName, &item.RegistrationNumber, &item.ParentId, &item.ParentPhone); err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, item)
+	}
+	return alerts, rows.Err()
+}
+
+func (s *ClinicStore) SetClinicChildMissedNotified(ctx context.Context, clinicID, childID string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE clinic_children
+		SET missed_notified = true, updated_at = NOW()
+		WHERE clinic_id = $1 AND child_id = $2
+	`, clinicID, childID)
+	return err
 }
 
 func (s *ClinicStore) ListParentDueVaccinations(ctx context.Context, parentID string) ([]models.ParentDueVaccination, error) {
