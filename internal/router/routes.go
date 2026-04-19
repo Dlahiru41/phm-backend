@@ -69,6 +69,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		recGroup.GET("", vaccRec.List)
 		recGroup.GET("/due/phm", middleware.RequireRole("phm"), vaccRec.ListDueForPHM)
 		recGroup.POST("/tracking", middleware.RequireRole("phm"), vaccRec.UpdateTracking)
+		recGroup.PATCH("/child/:childId/next-due-date", middleware.RequireRole("phm", "moh"), vaccRec.UpdateNextDueDateByChildID)
 		recGroup.GET("/:recordId", vaccRec.GetByID)
 		recGroup.PUT("/:recordId", middleware.RequireRole("phm"), vaccRec.Update)
 		recGroup.DELETE("/:recordId", middleware.RequireRole("moh"), vaccRec.Delete)

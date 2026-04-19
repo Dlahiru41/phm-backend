@@ -124,6 +124,29 @@ func (s *VaccinationRecordStore) Delete(ctx context.Context, recordID string) er
 	return err
 }
 
+func (s *VaccinationRecordStore) UpdateLatestNextDueDateByChildID(ctx context.Context, childID, nextDueDate string) error {
+	cmd, err := s.pool.Exec(ctx, `
+		WITH latest_record AS (
+			SELECT id
+			FROM vaccination_records
+			WHERE child_id = $1
+			ORDER BY administered_date DESC, created_at DESC
+			LIMIT 1
+		)
+		UPDATE vaccination_records vr
+		SET next_due_date = $2::date
+		FROM latest_record lr
+		WHERE vr.id = lr.id
+	`, childID, nextDueDate)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func scanVaccinationRecords(rows pgx.Rows) ([]models.VaccinationRecord, error) {
 	var list []models.VaccinationRecord
 	for rows.Next() {

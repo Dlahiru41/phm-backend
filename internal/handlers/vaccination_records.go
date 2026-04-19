@@ -73,6 +73,10 @@ type VaccinationCardHistory struct {
 	Status      string `json:"status"`
 }
 
+type UpdateNextDueDateByChildIDRequest struct {
+	NextDueDate string `json:"nextDueDate" binding:"required"`
+}
+
 func (h *VaccinationRecordsHandler) Create(c *gin.Context) {
 	var req CreateVaccinationRecordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -503,6 +507,44 @@ func (h *VaccinationRecordsHandler) sendMissedVaccinationAlert(c *gin.Context, i
 			log.Printf("[vaccination-missed] sms failed schedule=%s child=%s err=%v", item.ScheduleId, item.ChildId, err)
 		}
 	}
+}
+
+func (h *VaccinationRecordsHandler) UpdateNextDueDateByChildID(c *gin.Context) {
+	childID := strings.TrimSpace(c.Param("childId"))
+	if childID == "" {
+		response.AbortWithError(c, errors.New(errors.ErrBadRequest.Status, "BAD_REQUEST", "childId is required"))
+		return
+	}
+
+	var req UpdateNextDueDateByChildIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if response.ValidationErrorFromBind(c, err) {
+			return
+		}
+		response.ValidationError(c, "Validation failed", nil)
+		return
+	}
+
+	nextDueDate := strings.TrimSpace(req.NextDueDate)
+	if _, err := time.Parse("2006-01-02", nextDueDate); err != nil {
+		response.AbortWithError(c, errors.New(errors.ErrBadRequest.Status, "BAD_REQUEST", "nextDueDate must be in YYYY-MM-DD format"))
+		return
+	}
+
+	if err := h.RecordStore.UpdateLatestNextDueDateByChildID(c.Request.Context(), childID, nextDueDate); err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to update next due date"))
+		return
+	}
+
+	response.OK(c, gin.H{
+		"childId":     childID,
+		"nextDueDate": nextDueDate,
+		"message":     "Next due date updated successfully.",
+	})
 }
 
 func safeChildName(name string) string {
