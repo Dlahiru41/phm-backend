@@ -19,13 +19,14 @@ import (
 
 type ClinicHandler struct {
 	ClinicStore       *store.ClinicStore
+	UserStore         *store.UserStore
 	NotificationStore *store.NotificationStore
 	WhatsAppSender    messaging.WhatsAppSender
 }
 
 type CreateClinicRequest struct {
 	ClinicDate  string `json:"clinicDate" binding:"required"`
-	GnDivision  string `json:"gnDivision" binding:"required"`
+	GnDivision  string `json:"gnDivision"`
 	Location    string `json:"location" binding:"required"`
 	Description string `json:"description"`
 }
@@ -56,12 +57,41 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 		return
 	}
 
+	if h.UserStore == nil {
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "User store is not configured"))
+		return
+	}
+
+	phm, err := h.UserStore.GetByID(c.Request.Context(), claims.UserId)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrNotFound.Status, "NOT_FOUND", "PHM user not found"))
+		return
+	}
+
+	assignedArea := ""
+	if phm.AssignedArea != nil {
+		assignedArea = strings.TrimSpace(*phm.AssignedArea)
+	}
+	if assignedArea == "" {
+		response.AbortWithError(c, errors.New(errors.ErrBadRequest.Status, "BAD_REQUEST", "PHM assigned area is not configured"))
+		return
+	}
+
+	if strings.TrimSpace(req.GnDivision) != "" && !strings.EqualFold(strings.TrimSpace(req.GnDivision), assignedArea) {
+		response.ValidationError(c, "gnDivision must match the PHM assigned area", nil)
+		return
+	}
+
 	clinicID := "clinic-" + uuid.New().String()[:8]
 	clinic := &models.ClinicSchedule{
 		ClinicId:    clinicID,
 		PhmId:       claims.UserId,
 		ClinicDate:  req.ClinicDate,
-		GnDivision:  req.GnDivision,
+		GnDivision:  assignedArea,
 		Location:    req.Location,
 		Description: req.Description,
 		Status:      "scheduled",
@@ -261,6 +291,20 @@ func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 		return
 	}
 
+	if clinic.Status == "completed" && req.Status != "completed" {
+		response.AbortWithError(c, errors.New(errors.ErrBadRequest.Status, "BAD_REQUEST", "Clinic is completed and locked"))
+		return
+	}
+
+	if clinic.Status == req.Status {
+		response.OK(c, gin.H{
+			"clinic":           clinic,
+			"missedAlerted":    0,
+			"cancelledAlerted": 0,
+		})
+		return
+	}
+
 	if err := h.ClinicStore.UpdateClinicStatus(c.Request.Context(), clinicID, req.Status); err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
 			response.AbortWithError(c, appErr)
@@ -271,13 +315,14 @@ func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 	}
 
 	missedAlerts := 0
+	cancelledAlerts := 0
 	if req.Status == "completed" {
 		alerts, err := h.ClinicStore.MarkMissedClinicAttendance(c.Request.Context(), clinicID)
 		if err != nil {
 			log.Printf("[clinic] failed to mark missed clinic attendance clinic=%s err=%v", clinicID, err)
 		} else {
 			for _, item := range alerts {
-				message := "Your child has missed the clinic session. Please attend the next session."
+				message := clinicMissedMessage(clinic.ClinicDate)
 				if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
 					notificationID := "notif-" + uuid.New().String()[:8]
 					_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "missed_clinic", message, &item.ChildId)
@@ -293,10 +338,32 @@ func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 		}
 	}
 
+	if req.Status == "cancelled" {
+		children, err := h.ClinicStore.ListChildrenForClinic(c.Request.Context(), clinicID)
+		if err != nil {
+			log.Printf("[clinic] failed to load clinic children for cancellation clinic=%s err=%v", clinicID, err)
+		} else {
+			message := clinicCancelledMessage(clinic.ClinicDate)
+			for _, item := range children {
+				if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
+					notificationID := "notif-" + uuid.New().String()[:8]
+					_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "cancelled_clinic", message, &item.ChildId)
+				}
+				if h.WhatsAppSender != nil && item.ParentPhone != nil && strings.TrimSpace(*item.ParentPhone) != "" {
+					if err := h.WhatsAppSender.SendMessage(c.Request.Context(), strings.TrimSpace(*item.ParentPhone), message); err != nil {
+						log.Printf("[clinic] failed to send cancelled clinic sms clinic=%s child=%s err=%v", clinicID, item.ChildId, err)
+					}
+				}
+				cancelledAlerts++
+			}
+		}
+	}
+
 	updatedClinic, _ := h.ClinicStore.GetByID(c.Request.Context(), clinicID)
 	response.OK(c, gin.H{
-		"clinic":        updatedClinic,
-		"missedAlerted": missedAlerts,
+		"clinic":           updatedClinic,
+		"missedAlerted":    missedAlerts,
+		"cancelledAlerted": cancelledAlerts,
 	})
 }
 
@@ -333,6 +400,11 @@ func (h *ClinicHandler) UpdateAttendance(c *gin.Context) {
 		return
 	}
 
+	if clinic.Status == "completed" {
+		response.AbortWithError(c, errors.New(errors.ErrBadRequest.Status, "BAD_REQUEST", "Clinic is completed and attendance is locked"))
+		return
+	}
+
 	if err := h.ClinicStore.UpdateClinicChildAttendance(c.Request.Context(), clinicID, req.ChildId, req.Status); err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
 			response.AbortWithError(c, appErr)
@@ -340,6 +412,25 @@ func (h *ClinicHandler) UpdateAttendance(c *gin.Context) {
 		}
 		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to update attendance"))
 		return
+	}
+
+	if req.Status == "not_attended" {
+		item, err := h.ClinicStore.GetClinicAttendanceAlertByChild(c.Request.Context(), clinicID, req.ChildId)
+		if err != nil {
+			log.Printf("[clinic] failed to fetch clinic attendance alert payload clinic=%s child=%s err=%v", clinicID, req.ChildId, err)
+		} else if item != nil && !item.MissedNotified {
+			message := clinicMissedMessage(clinic.ClinicDate)
+			if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
+				notificationID := "notif-" + uuid.New().String()[:8]
+				_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "missed_clinic", message, &item.ChildId)
+			}
+			if h.WhatsAppSender != nil && item.ParentPhone != nil && strings.TrimSpace(*item.ParentPhone) != "" {
+				if err := h.WhatsAppSender.SendMessage(c.Request.Context(), strings.TrimSpace(*item.ParentPhone), message); err != nil {
+					log.Printf("[clinic] failed to send manual not-attended sms clinic=%s child=%s err=%v", clinicID, req.ChildId, err)
+				}
+			}
+			_ = h.ClinicStore.SetClinicChildMissedNotified(c.Request.Context(), clinicID, req.ChildId)
+		}
 	}
 
 	response.OK(c, gin.H{"message": "Attendance updated successfully"})
@@ -429,4 +520,12 @@ func defaultChildName(name string) string {
 		return "Your child"
 	}
 	return name
+}
+
+func clinicMissedMessage(clinicDate string) string {
+	return fmt.Sprintf("Your child missed the clinic session held on %s. Please contact your PHM or visit the next available clinic.", strings.TrimSpace(clinicDate))
+}
+
+func clinicCancelledMessage(clinicDate string) string {
+	return fmt.Sprintf("The clinic scheduled on %s has been cancelled. Please wait for further updates.", strings.TrimSpace(clinicDate))
 }

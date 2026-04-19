@@ -331,19 +331,20 @@ func (s *ClinicStore) UpdateClinicChildAttendance(ctx context.Context, clinicID,
 func (s *ClinicStore) MarkMissedClinicAttendance(ctx context.Context, clinicID string) ([]models.ClinicAttendanceAlert, error) {
 	rows, err := s.pool.Query(ctx, `
 		UPDATE clinic_children cc
-		SET attendance_status = 'missed', attended = false, updated_at = NOW()
+		SET attendance_status = 'not_attended', attended = false, updated_at = NOW()
 		FROM children c
 		LEFT JOIN users u ON u.id = c.parent_id
 		WHERE cc.child_id = c.id
 		  AND cc.clinic_id = $1
-		  AND cc.attendance_status IN ('pending', 'not_attended')
+		  AND cc.attendance_status = 'pending'
 		RETURNING
 			cc.clinic_id,
 			c.id,
 			TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS child_name,
 			c.registration_number,
 			c.parent_id,
-			NULLIF(TRIM(COALESCE(u.phone_number, c.parent_whatsapp_number, '')), '') AS parent_phone
+			NULLIF(TRIM(COALESCE(u.phone_number, c.parent_whatsapp_number, '')), '') AS parent_phone,
+			cc.missed_notified
 	`, clinicID)
 	if err != nil {
 		return nil, err
@@ -353,12 +354,45 @@ func (s *ClinicStore) MarkMissedClinicAttendance(ctx context.Context, clinicID s
 	var alerts []models.ClinicAttendanceAlert
 	for rows.Next() {
 		var item models.ClinicAttendanceAlert
-		if err := rows.Scan(&item.ClinicId, &item.ChildId, &item.ChildName, &item.RegistrationNumber, &item.ParentId, &item.ParentPhone); err != nil {
+		if err := rows.Scan(&item.ClinicId, &item.ChildId, &item.ChildName, &item.RegistrationNumber, &item.ParentId, &item.ParentPhone, &item.MissedNotified); err != nil {
 			return nil, err
 		}
 		alerts = append(alerts, item)
 	}
 	return alerts, rows.Err()
+}
+
+func (s *ClinicStore) GetClinicAttendanceAlertByChild(ctx context.Context, clinicID, childID string) (*models.ClinicAttendanceAlert, error) {
+	var item models.ClinicAttendanceAlert
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			cc.clinic_id,
+			c.id,
+			TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS child_name,
+			c.registration_number,
+			c.parent_id,
+			NULLIF(TRIM(COALESCE(u.phone_number, c.parent_whatsapp_number, '')), '') AS parent_phone,
+			cc.missed_notified
+		FROM clinic_children cc
+		JOIN children c ON c.id = cc.child_id
+		LEFT JOIN users u ON u.id = c.parent_id
+		WHERE cc.clinic_id = $1 AND cc.child_id = $2
+	`, clinicID, childID).Scan(
+		&item.ClinicId,
+		&item.ChildId,
+		&item.ChildName,
+		&item.RegistrationNumber,
+		&item.ParentId,
+		&item.ParentPhone,
+		&item.MissedNotified,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &item, nil
 }
 
 func (s *ClinicStore) SetClinicChildMissedNotified(ctx context.Context, clinicID, childID string) error {

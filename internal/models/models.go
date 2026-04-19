@@ -300,4 +300,5 @@ type ClinicAttendanceAlert struct {
 	RegistrationNumber string  `json:"registrationNumber"`
 	ParentId           *string `json:"parentId,omitempty"`
 	ParentPhone        *string `json:"parentPhone,omitempty"`
+	MissedNotified     bool    `json:"missedNotified,omitempty"`
 }

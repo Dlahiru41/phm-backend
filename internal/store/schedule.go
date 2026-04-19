@@ -182,3 +182,47 @@ func (s *ScheduleStore) SetMissedNotified(ctx context.Context, scheduleID string
 	}
 	return nil
 }
+
+func (s *ScheduleStore) GetNotificationContextByScheduleID(ctx context.Context, scheduleID string) (*models.PHMDueVaccination, error) {
+	var item models.PHMDueVaccination
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			vs.id,
+			c.id,
+			TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS child_name,
+			c.registration_number,
+			vs.vaccine_id,
+			v.name,
+			vs.due_date::text,
+			vs.status,
+			c.parent_id,
+			NULLIF(TRIM(COALESCE(u.phone_number, c.parent_whatsapp_number, '')), '') AS parent_phone,
+			vs.reminder_sent,
+			vs.missed_notified
+		FROM vaccination_schedules vs
+		JOIN children c ON c.id = vs.child_id
+		JOIN vaccines v ON v.id = vs.vaccine_id
+		LEFT JOIN users u ON u.id = c.parent_id
+		WHERE vs.id = $1
+	`, scheduleID).Scan(
+		&item.ScheduleId,
+		&item.ChildId,
+		&item.ChildName,
+		&item.RegistrationNumber,
+		&item.VaccineId,
+		&item.VaccineName,
+		&item.DueDate,
+		&item.Status,
+		&item.ParentId,
+		&item.ParentPhone,
+		&item.ReminderSent,
+		&item.MissedNotified,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &item, nil
+}

@@ -90,7 +90,11 @@ func main() {
 		NotificationStore: store.NewNotificationStore(pool),
 		WhatsAppSender:    whatsAppSender,
 	}
-	schedHandler := &handlers.SchedulesHandler{ScheduleStore: store.NewScheduleStore(pool)}
+	schedHandler := &handlers.SchedulesHandler{
+		ScheduleStore:     store.NewScheduleStore(pool),
+		NotificationStore: store.NewNotificationStore(pool),
+		WhatsAppSender:    whatsAppSender,
+	}
 	growthStore := store.NewGrowthRecordStore(pool, whoAssessor)
 	growthHandler := &handlers.GrowthHandler{GrowthStore: growthStore}
 	notifHandler := &handlers.NotificationsHandler{NotificationStore: store.NewNotificationStore(pool)}
@@ -115,6 +119,7 @@ func main() {
 	}
 	clinicHandler := &handlers.ClinicHandler{
 		ClinicStore:       store.NewClinicStore(pool),
+		UserStore:         usersStore,
 		NotificationStore: store.NewNotificationStore(pool),
 		WhatsAppSender:    whatsAppSender,
 	}

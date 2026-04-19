@@ -18,7 +18,7 @@ type NotificationsHandler struct {
 
 type CreateNotificationRequest struct {
 	RecipientId    string  `json:"recipientId" binding:"required"`
-	Type           string  `json:"type" binding:"required,oneof=reminder missed upcoming info vaccination_due growth_record clinic_reminder missed_vaccination missed_clinic"`
+	Type           string  `json:"type" binding:"required,oneof=reminder missed upcoming info vaccination_due growth_record clinic_reminder missed_vaccination missed_clinic cancelled_clinic cancelled_vaccination"`
 	Message        string  `json:"message" binding:"required"`
 	RelatedChildId *string `json:"relatedChildId"`
 }

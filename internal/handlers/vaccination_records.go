@@ -254,6 +254,15 @@ func (h *VaccinationRecordsHandler) UpdateTracking(c *gin.Context) {
 			return
 		}
 
+		if item, err := h.ScheduleStore.GetNotificationContextByScheduleID(c.Request.Context(), sch.ScheduleId); err != nil {
+			log.Printf("[vaccination-tracking] completion context fetch failed schedule=%s err=%v", sch.ScheduleId, err)
+		} else if item != nil && h.WhatsAppSender != nil && item.ParentPhone != nil && strings.TrimSpace(*item.ParentPhone) != "" {
+			successMessage := "Your child has successfully received the scheduled vaccination."
+			if err := h.WhatsAppSender.SendMessage(c.Request.Context(), strings.TrimSpace(*item.ParentPhone), successMessage); err != nil {
+				log.Printf("[vaccination-tracking] completion sms failed schedule=%s child=%s err=%v", sch.ScheduleId, item.ChildId, err)
+			}
+		}
+
 		response.OK(c, gin.H{"message": "Vaccination marked as completed"})
 		return
 	}
@@ -267,15 +276,11 @@ func (h *VaccinationRecordsHandler) UpdateTracking(c *gin.Context) {
 		return
 	}
 
-	dueItems, err := h.ScheduleStore.ListDueForPHM(c.Request.Context(), claims.UserId)
-	if err == nil {
-		for _, item := range dueItems {
-			if item.ScheduleId == sch.ScheduleId {
-				h.sendMissedVaccinationAlert(c, item)
-				_ = h.ScheduleStore.SetMissedNotified(c.Request.Context(), item.ScheduleId)
-				break
-			}
-		}
+	if item, err := h.ScheduleStore.GetNotificationContextByScheduleID(c.Request.Context(), sch.ScheduleId); err != nil {
+		log.Printf("[vaccination-tracking] missed context fetch failed schedule=%s err=%v", sch.ScheduleId, err)
+	} else if item != nil {
+		h.sendMissedVaccinationAlert(c, *item)
+		_ = h.ScheduleStore.SetMissedNotified(c.Request.Context(), item.ScheduleId)
 	}
 
 	response.OK(c, gin.H{"message": "Vaccination marked as not attended"})
@@ -488,7 +493,7 @@ func (h *VaccinationRecordsHandler) sendDueVaccinationReminder(c *gin.Context, i
 }
 
 func (h *VaccinationRecordsHandler) sendMissedVaccinationAlert(c *gin.Context, item models.PHMDueVaccination) {
-	message := "Your child has missed the scheduled vaccination. Please contact your PHM."
+	message := fmt.Sprintf("Your child missed the scheduled vaccination on %s. Please visit your nearest clinic or contact your PHM.", strings.TrimSpace(item.DueDate))
 	if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
 		notificationID := "notif-" + uuid.New().String()[:8]
 		_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "missed_vaccination", message, &item.ChildId)
