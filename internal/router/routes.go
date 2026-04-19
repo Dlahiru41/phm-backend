@@ -134,6 +134,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 	// Admin (admin-only)
 	adminGroup := api.Group("/admin").Use(authMw).Use(middleware.RequireRole("admin"))
 	{
+		adminGroup.GET("/moh-accounts", admin.ListMOHAccounts)
 		adminGroup.POST("/moh-accounts/request-otp", admin.RequestMOHAccountOTP)
 		adminGroup.POST("/moh-accounts/complete", admin.CompleteMOHAccount)
 		// NEW: Simplified single-step MOH account creation with temporary password

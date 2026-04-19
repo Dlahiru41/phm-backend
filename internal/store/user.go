@@ -182,6 +182,45 @@ func (s *UserStore) CreateMOH(ctx context.Context, id, employeeId, email, nic, p
 	return err
 }
 
+// ListMOHUsers returns all MOH users with non-sensitive profile details.
+func (s *UserStore) ListMOHUsers(ctx context.Context) ([]models.MOHUserSummary, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, COALESCE(employee_id, ''), name, email, COALESCE(phone_number, ''),
+		       COALESCE(assigned_area, ''), first_login, created_at
+		FROM users
+		WHERE role = 'moh'
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]models.MOHUserSummary, 0)
+	for rows.Next() {
+		var item models.MOHUserSummary
+		if err := rows.Scan(
+			&item.UserId,
+			&item.EmployeeId,
+			&item.Name,
+			&item.Email,
+			&item.PhoneNumber,
+			&item.AssignedArea,
+			&item.FirstLogin,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
 // IsAdmin checks if a user has admin role
 func (s *UserStore) IsAdmin(ctx context.Context, userID string) (bool, error) {
 	var role string

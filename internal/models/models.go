@@ -26,6 +26,17 @@ type UserWithPassword struct {
 	CreatedByMoh *string `json:"createdByMoh,omitempty"`
 }
 
+type MOHUserSummary struct {
+	UserId       string    `json:"userId"`
+	EmployeeId   string    `json:"employeeId"`
+	Name         string    `json:"name"`
+	Email        string    `json:"email"`
+	PhoneNumber  string    `json:"phoneNumber"`
+	AssignedArea string    `json:"assignedArea"`
+	FirstLogin   bool      `json:"firstLogin"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
 type Child struct {
 	ChildId            string    `json:"childId"`
 	RegistrationNumber string    `json:"registrationNumber"`

@@ -10,6 +10,7 @@ import (
 	"ncvms/internal/errors"
 	"ncvms/internal/messaging"
 	"ncvms/internal/middleware"
+	"ncvms/internal/models"
 	"ncvms/internal/response"
 	"ncvms/internal/store"
 
@@ -78,6 +79,40 @@ type CreateMOHAccountResponse struct {
 	TempPassword      string `json:"tempPassword"`
 	MaskedDestination string `json:"maskedDestination"`
 	FirstLogin        bool   `json:"firstLogin"`
+}
+
+// ListMOHAccounts returns all MOH users for admin management.
+func (h *AdminHandler) ListMOHAccounts(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil {
+		response.AbortWithError(c, errors.ErrUnauthorized)
+		return
+	}
+
+	if claims.Role != "admin" {
+		response.Error(c, http.StatusForbidden, "FORBIDDEN", "Only admin users can access MOH accounts")
+		return
+	}
+
+	if h.UserStore == nil {
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "User store is not configured"))
+		return
+	}
+
+	items, err := h.UserStore.ListMOHUsers(c.Request.Context())
+	if err != nil {
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to fetch MOH accounts"))
+		return
+	}
+
+	if items == nil {
+		items = []models.MOHUserSummary{}
+	}
+
+	response.OK(c, gin.H{
+		"count": len(items),
+		"items": items,
+	})
 }
 
 // RequestMOHAccountOTP generates an OTP for MOH account creation
