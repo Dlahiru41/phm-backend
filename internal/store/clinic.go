@@ -266,6 +266,37 @@ func (s *ClinicStore) ListChildrenForClinic(ctx context.Context, clinicID string
 	return list, rows.Err()
 }
 
+func (s *ClinicStore) ListMappedChildrenForClinic(ctx context.Context, clinicID string) ([]models.ClinicAttendanceAlert, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			cc.clinic_id,
+			c.id,
+			TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS child_name,
+			c.registration_number,
+			c.parent_id,
+			NULLIF(TRIM(COALESCE(u.phone_number, c.parent_whatsapp_number, '')), '') AS parent_phone
+		FROM clinic_children cc
+		JOIN children c ON c.id = cc.child_id
+		LEFT JOIN users u ON u.id = c.parent_id
+		WHERE cc.clinic_id = $1
+		ORDER BY cc.created_at ASC
+	`, clinicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []models.ClinicAttendanceAlert
+	for rows.Next() {
+		var item models.ClinicAttendanceAlert
+		if err := rows.Scan(&item.ClinicId, &item.ChildId, &item.ChildName, &item.RegistrationNumber, &item.ParentId, &item.ParentPhone); err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+	return list, rows.Err()
+}
+
 func (s *ClinicStore) CreateClinicChild(ctx context.Context, clinicChild *models.ClinicChild) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO clinic_children (id, clinic_id, child_id, attended, attendance_status, missed_notified, created_at, updated_at)

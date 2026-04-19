@@ -41,7 +41,8 @@ type UpdateAttendanceRequest struct {
 	Status  string `json:"status" binding:"required,oneof=attended not_attended"`
 }
 
-// CreateClinic creates a new clinic and notifies all parents in the clinic GN division.
+// CreateClinic creates a new clinic and notifies parents in the clinic target set.
+// For vaccination clinics, the target set is due children only.
 func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 	claims := middleware.GetClaims(c)
 	if claims == nil {
@@ -115,19 +116,30 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 		return
 	}
 
-	allChildren, err := h.ClinicStore.ListChildrenForClinic(c.Request.Context(), clinicID)
-	if err != nil {
-		if appErr := errors.FromErr(err); appErr != nil {
-			response.AbortWithError(c, appErr)
+	dueChildren, dueErr := h.ClinicStore.GetDueChildren(c.Request.Context(), clinicID)
+	if dueErr != nil {
+		log.Printf("[clinic] failed to fetch due children clinic=%s err=%v", clinicID, dueErr)
+		dueChildren = []models.DueChild{}
+	}
+
+	targetChildren := []models.ClinicAttendanceAlert{}
+	if clinicType == "vaccination" {
+		targetChildren = buildVaccinationClinicTargets(clinicID, dueChildren)
+	} else {
+		targetChildren, err = h.ClinicStore.ListChildrenForClinic(c.Request.Context(), clinicID)
+		if err != nil {
+			if appErr := errors.FromErr(err); appErr != nil {
+				response.AbortWithError(c, appErr)
+				return
+			}
+			response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to fetch clinic children"))
 			return
 		}
-		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to fetch clinic children"))
-		return
 	}
 
 	notificationCount := 0
 	smsCount := 0
-	for _, item := range allChildren {
+	for _, item := range targetChildren {
 		clinicChild := &models.ClinicChild{
 			ClinicChildId:    "cc-" + uuid.New().String()[:8],
 			ClinicId:         clinicID,
@@ -143,7 +155,7 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 		}
 
 		if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
-			message := fmt.Sprintf("%s has a scheduled clinic session at %s on %s.", defaultChildName(item.ChildName), req.Location, req.ClinicDate)
+			message := clinicScheduledNotificationMessage(defaultChildName(item.ChildName), req.Location, req.ClinicDate, clinicType)
 			notificationID := "notif-" + uuid.New().String()[:8]
 			if err := h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "clinic_reminder", message, &item.ChildId); err == nil {
 				notificationCount++
@@ -151,7 +163,7 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 		}
 
 		if h.WhatsAppSender != nil && item.ParentPhone != nil && strings.TrimSpace(*item.ParentPhone) != "" {
-			smsMessage := fmt.Sprintf("%s has a clinic session at %s on %s. Please attend.", defaultChildName(item.ChildName), req.Location, req.ClinicDate)
+			smsMessage := clinicScheduledSMSMessage(defaultChildName(item.ChildName), req.Location, req.ClinicDate, clinicType)
 			if err := h.WhatsAppSender.SendMessage(c.Request.Context(), strings.TrimSpace(*item.ParentPhone), smsMessage); err == nil {
 				smsCount++
 			} else {
@@ -160,15 +172,9 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 		}
 	}
 
-	dueChildren, dueErr := h.ClinicStore.GetDueChildren(c.Request.Context(), clinicID)
-	if dueErr != nil {
-		log.Printf("[clinic] failed to fetch due children clinic=%s err=%v", clinicID, dueErr)
-		dueChildren = []models.DueChild{}
-	}
-
 	response.Created(c, gin.H{
 		"clinic":                  clinic,
-		"childrenInDivision":      len(allChildren),
+		"childrenInDivision":      len(targetChildren),
 		"dueChildren":             dueChildren,
 		"parentNotificationCount": notificationCount,
 		"parentSMSCount":          smsCount,
@@ -334,7 +340,7 @@ func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 			log.Printf("[clinic] failed to mark missed clinic attendance clinic=%s err=%v", clinicID, err)
 		} else {
 			for _, item := range alerts {
-				message := clinicMissedMessage(clinic.ClinicDate)
+				message := clinicMissedMessage(clinic.ClinicDate, clinic.ClinicType)
 				if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
 					notificationID := "notif-" + uuid.New().String()[:8]
 					_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "missed_clinic", message, &item.ChildId)
@@ -351,11 +357,11 @@ func (h *ClinicHandler) UpdateClinicStatus(c *gin.Context) {
 	}
 
 	if req.Status == "cancelled" {
-		children, err := h.ClinicStore.ListChildrenForClinic(c.Request.Context(), clinicID)
+		children, err := h.ClinicStore.ListMappedChildrenForClinic(c.Request.Context(), clinicID)
 		if err != nil {
 			log.Printf("[clinic] failed to load clinic children for cancellation clinic=%s err=%v", clinicID, err)
 		} else {
-			message := clinicCancelledMessage(clinic.ClinicDate)
+			message := clinicCancelledMessage(clinic.ClinicDate, clinic.ClinicType)
 			for _, item := range children {
 				if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
 					notificationID := "notif-" + uuid.New().String()[:8]
@@ -431,7 +437,7 @@ func (h *ClinicHandler) UpdateAttendance(c *gin.Context) {
 		if err != nil {
 			log.Printf("[clinic] failed to fetch clinic attendance alert payload clinic=%s child=%s err=%v", clinicID, req.ChildId, err)
 		} else if item != nil && !item.MissedNotified {
-			message := clinicMissedMessage(clinic.ClinicDate)
+			message := clinicMissedMessage(clinic.ClinicDate, clinic.ClinicType)
 			if h.NotificationStore != nil && item.ParentId != nil && strings.TrimSpace(*item.ParentId) != "" {
 				notificationID := "notif-" + uuid.New().String()[:8]
 				_ = h.NotificationStore.Create(c.Request.Context(), notificationID, strings.TrimSpace(*item.ParentId), "missed_clinic", message, &item.ChildId)
@@ -534,10 +540,65 @@ func defaultChildName(name string) string {
 	return name
 }
 
-func clinicMissedMessage(clinicDate string) string {
+func clinicScheduledNotificationMessage(childName, location, clinicDate, clinicType string) string {
+	if isVaccinationClinicType(clinicType) {
+		return fmt.Sprintf("%s has a scheduled vaccination clinic session at %s on %s.", childName, location, clinicDate)
+	}
+	return fmt.Sprintf("%s has a scheduled clinic session at %s on %s.", childName, location, clinicDate)
+}
+
+func clinicScheduledSMSMessage(childName, location, clinicDate, clinicType string) string {
+	if isVaccinationClinicType(clinicType) {
+		return fmt.Sprintf("%s has a vaccination clinic session at %s on %s. Please attend for due vaccinations.", childName, location, clinicDate)
+	}
+	return fmt.Sprintf("%s has a clinic session at %s on %s. Please attend.", childName, location, clinicDate)
+}
+
+func clinicMissedMessage(clinicDate, clinicType string) string {
+	if isVaccinationClinicType(clinicType) {
+		return fmt.Sprintf("Your child missed the vaccination clinic session held on %s. Please contact your PHM or visit the next available clinic.", strings.TrimSpace(clinicDate))
+	}
 	return fmt.Sprintf("Your child missed the clinic session held on %s. Please contact your PHM or visit the next available clinic.", strings.TrimSpace(clinicDate))
 }
 
-func clinicCancelledMessage(clinicDate string) string {
+func clinicCancelledMessage(clinicDate, clinicType string) string {
+	if isVaccinationClinicType(clinicType) {
+		return fmt.Sprintf("The vaccination clinic scheduled on %s has been cancelled. Please wait for further updates.", strings.TrimSpace(clinicDate))
+	}
 	return fmt.Sprintf("The clinic scheduled on %s has been cancelled. Please wait for further updates.", strings.TrimSpace(clinicDate))
+}
+
+func isVaccinationClinicType(clinicType string) bool {
+	return strings.EqualFold(strings.TrimSpace(clinicType), "vaccination")
+}
+
+func buildVaccinationClinicTargets(clinicID string, dueChildren []models.DueChild) []models.ClinicAttendanceAlert {
+	if len(dueChildren) == 0 {
+		return []models.ClinicAttendanceAlert{}
+	}
+
+	seen := make(map[string]struct{}, len(dueChildren))
+	targets := make([]models.ClinicAttendanceAlert, 0, len(dueChildren))
+	for _, d := range dueChildren {
+		childID := strings.TrimSpace(d.ChildId)
+		if childID == "" {
+			continue
+		}
+		if _, exists := seen[childID]; exists {
+			continue
+		}
+		seen[childID] = struct{}{}
+
+		fullName := strings.TrimSpace(strings.TrimSpace(d.FirstName) + " " + strings.TrimSpace(d.LastName))
+		targets = append(targets, models.ClinicAttendanceAlert{
+			ClinicId:           clinicID,
+			ChildId:            childID,
+			ChildName:          fullName,
+			RegistrationNumber: d.RegistrationNumber,
+			ParentId:           d.ParentId,
+			ParentPhone:        d.ParentPhone,
+		})
+	}
+
+	return targets
 }
