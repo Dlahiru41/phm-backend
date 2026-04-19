@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"ncvms/internal/errors"
 	"ncvms/internal/middleware"
@@ -363,4 +365,53 @@ func (h *MOHReportsHandler) GetReportData(c *gin.Context) {
 	// Return as raw JSON
 	jsonData, _ := json.Marshal(data)
 	c.Data(http.StatusOK, "application/json", jsonData)
+}
+
+// SystemOverviewReport returns a deep, system-wide report for MOH users.
+func (h *MOHReportsHandler) SystemOverviewReport(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil {
+		response.AbortWithError(c, errors.ErrUnauthorized)
+		return
+	}
+
+	startDate := strings.TrimSpace(c.Query("startDate"))
+	endDate := strings.TrimSpace(c.Query("endDate"))
+	gnDivision := strings.TrimSpace(c.Query("gnDivision"))
+	months := 12
+
+	if rawMonths := strings.TrimSpace(c.Query("trendMonths")); rawMonths != "" {
+		parsed, err := strconv.Atoi(rawMonths)
+		if err != nil || parsed < 3 || parsed > 36 {
+			response.ValidationError(c, "trendMonths must be an integer between 3 and 36", nil)
+			return
+		}
+		months = parsed
+	}
+
+	if startDate != "" {
+		if _, err := time.Parse("2006-01-02", startDate); err != nil {
+			response.ValidationError(c, "startDate must be in YYYY-MM-DD format", nil)
+			return
+		}
+	}
+	if endDate != "" {
+		if _, err := time.Parse("2006-01-02", endDate); err != nil {
+			response.ValidationError(c, "endDate must be in YYYY-MM-DD format", nil)
+			return
+		}
+	}
+	if startDate != "" && endDate != "" && startDate > endDate {
+		response.ValidationError(c, "startDate cannot be after endDate", nil)
+		return
+	}
+
+	data, err := h.ReportStore.SystemOverviewReport(c.Request.Context(), startDate, endDate, gnDivision, months)
+	if err != nil {
+		log.Printf("[SystemOverviewReport Handler] Store error: %v", err)
+		response.Error(c, http.StatusInternalServerError, "DATABASE_ERROR", "Failed to generate system overview report")
+		return
+	}
+
+	response.OK(c, data)
 }

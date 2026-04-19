@@ -169,6 +169,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 	// MOH Reports
 	mohReportsGroup := api.Group("/moh/reports").Use(authMw).Use(middleware.RequireRole("moh"))
 	{
+		mohReportsGroup.GET("/system-overview", mohReports.SystemOverviewReport)
 		mohReportsGroup.GET("/coverage", mohReports.VaccinationCoverageReport)
 		mohReportsGroup.GET("/missed", mohReports.MissedVaccinationReport)
 		mohReportsGroup.GET("/phm-performance", mohReports.PHMPerformanceReport)
