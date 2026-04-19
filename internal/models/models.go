@@ -232,6 +232,7 @@ type ClinicSchedule struct {
 	ClinicId    string    `json:"clinicId"`
 	PhmId       string    `json:"phmId"`
 	ClinicDate  string    `json:"clinicDate"`
+	ClinicType  string    `json:"clinicType"`
 	GnDivision  string    `json:"gnDivision"`
 	Location    string    `json:"location"`
 	Description string    `json:"description,omitempty"`

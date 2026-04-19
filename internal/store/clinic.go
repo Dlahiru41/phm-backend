@@ -19,22 +19,23 @@ func NewClinicStore(pool *pgxpool.Pool) *ClinicStore { return &ClinicStore{pool:
 
 func (s *ClinicStore) Create(ctx context.Context, clinic *models.ClinicSchedule) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO clinic_schedules (id, phm_id, clinic_date, gn_division, location, description, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, clinic.ClinicId, clinic.PhmId, clinic.ClinicDate, clinic.GnDivision, clinic.Location, clinic.Description, clinic.Status, clinic.CreatedAt, clinic.UpdatedAt)
+		INSERT INTO clinic_schedules (id, phm_id, clinic_date, clinic_type, gn_division, location, description, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, clinic.ClinicId, clinic.PhmId, clinic.ClinicDate, clinic.ClinicType, clinic.GnDivision, clinic.Location, clinic.Description, clinic.Status, clinic.CreatedAt, clinic.UpdatedAt)
 	return err
 }
 
 func (s *ClinicStore) GetByID(ctx context.Context, clinicID string) (*models.ClinicSchedule, error) {
 	var clinic models.ClinicSchedule
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, phm_id, clinic_date::text, gn_division, location, COALESCE(description, ''), status, created_at, updated_at
+		SELECT id, phm_id, clinic_date::text, clinic_type, gn_division, location, COALESCE(description, ''), status, created_at, updated_at
 		FROM clinic_schedules
 		WHERE id = $1
 	`, clinicID).Scan(
 		&clinic.ClinicId,
 		&clinic.PhmId,
 		&clinic.ClinicDate,
+		&clinic.ClinicType,
 		&clinic.GnDivision,
 		&clinic.Location,
 		&clinic.Description,
@@ -48,7 +49,7 @@ func (s *ClinicStore) GetByID(ctx context.Context, clinicID string) (*models.Cli
 	return &clinic, nil
 }
 
-func (s *ClinicStore) ListByPHM(ctx context.Context, phmID string, fromDate, toDate *string) ([]models.ClinicSchedule, error) {
+func (s *ClinicStore) ListByPHM(ctx context.Context, phmID string, fromDate, toDate, clinicType *string) ([]models.ClinicSchedule, error) {
 	args := []interface{}{phmID}
 	where := []string{"phm_id = $1"}
 
@@ -60,9 +61,13 @@ func (s *ClinicStore) ListByPHM(ctx context.Context, phmID string, fromDate, toD
 		args = append(args, strings.TrimSpace(*toDate))
 		where = append(where, fmt.Sprintf("clinic_date <= $%d", len(args)))
 	}
+	if clinicType != nil && strings.TrimSpace(*clinicType) != "" {
+		args = append(args, strings.TrimSpace(*clinicType))
+		where = append(where, fmt.Sprintf("clinic_type = $%d", len(args)))
+	}
 
 	query := `
-		SELECT id, phm_id, clinic_date::text, gn_division, location, COALESCE(description, ''), status, created_at, updated_at
+		SELECT id, phm_id, clinic_date::text, clinic_type, gn_division, location, COALESCE(description, ''), status, created_at, updated_at
 		FROM clinic_schedules
 		WHERE ` + strings.Join(where, " AND ") + `
 		ORDER BY clinic_date DESC, created_at DESC
@@ -81,6 +86,7 @@ func (s *ClinicStore) ListByPHM(ctx context.Context, phmID string, fromDate, toD
 			&clinic.ClinicId,
 			&clinic.PhmId,
 			&clinic.ClinicDate,
+			&clinic.ClinicType,
 			&clinic.GnDivision,
 			&clinic.Location,
 			&clinic.Description,

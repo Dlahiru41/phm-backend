@@ -26,6 +26,7 @@ type ClinicHandler struct {
 
 type CreateClinicRequest struct {
 	ClinicDate  string `json:"clinicDate" binding:"required"`
+	ClinicType  string `json:"clinicType" binding:"omitempty,oneof=normal vaccination"`
 	GnDivision  string `json:"gnDivision"`
 	Location    string `json:"location" binding:"required"`
 	Description string `json:"description"`
@@ -86,11 +87,17 @@ func (h *ClinicHandler) CreateClinic(c *gin.Context) {
 		return
 	}
 
+	clinicType := strings.ToLower(strings.TrimSpace(req.ClinicType))
+	if clinicType == "" {
+		clinicType = "normal"
+	}
+
 	clinicID := "clinic-" + uuid.New().String()[:8]
 	clinic := &models.ClinicSchedule{
 		ClinicId:    clinicID,
 		PhmId:       claims.UserId,
 		ClinicDate:  req.ClinicDate,
+		ClinicType:  clinicType,
 		GnDivision:  assignedArea,
 		Location:    req.Location,
 		Description: req.Description,
@@ -199,8 +206,13 @@ func (h *ClinicHandler) ListMyClinics(c *gin.Context) {
 
 	fromDate := c.Query("fromDate")
 	toDate := c.Query("toDate")
+	clinicType := strings.ToLower(strings.TrimSpace(c.Query("clinicType")))
+	if clinicType != "" && clinicType != "normal" && clinicType != "vaccination" {
+		response.ValidationError(c, "clinicType must be one of: normal, vaccination", nil)
+		return
+	}
 
-	clinics, err := h.ClinicStore.ListByPHM(c.Request.Context(), claims.UserId, &fromDate, &toDate)
+	clinics, err := h.ClinicStore.ListByPHM(c.Request.Context(), claims.UserId, &fromDate, &toDate, &clinicType)
 	if err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
 			response.AbortWithError(c, appErr)
