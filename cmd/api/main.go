@@ -57,10 +57,12 @@ func main() {
 	whatsAppSender := messaging.NewTextLKSender()
 
 	authHandler := &handlers.AuthHandler{
-		UserStore:  usersStore,
-		AuditStore: store.NewAuditStore(pool),
-		JWTSecret:  cfg.JWTSecret,
-		JWTExpiry:  cfg.JWTExpiryHours,
+		UserStore:           usersStore,
+		AuditStore:          store.NewAuditStore(pool),
+		WhatsAppSender:      whatsAppSender,
+		JWTSecret:           cfg.JWTSecret,
+		JWTExpiry:           cfg.JWTExpiryHours,
+		PasswordResetOTPTTL: time.Duration(cfg.MobileChangeOTPTTLMin) * time.Minute,
 	}
 	usersHandler := &handlers.UsersHandler{
 		UserStore:             usersStore,

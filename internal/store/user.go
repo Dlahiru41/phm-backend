@@ -150,6 +150,30 @@ func (s *UserStore) ConsumeResetToken(ctx context.Context, token string) (userID
 	return userID, err
 }
 
+func (s *UserStore) ConsumeResetOTP(ctx context.Context, userID, otpCode string) (consumedUserID string, err error) {
+	err = s.pool.QueryRow(ctx, `
+		UPDATE password_reset_tokens
+		SET used_at = NOW()
+		WHERE token = (
+			SELECT token
+			FROM password_reset_tokens
+			WHERE user_id = $1
+			  AND token LIKE ($1 || ':' || $2 || ':%')
+			  AND used_at IS NULL
+			  AND expires_at > NOW()
+			ORDER BY created_at DESC
+			LIMIT 1
+		)
+		RETURNING user_id
+	`, userID, otpCode).Scan(&consumedUserID)
+	return consumedUserID, err
+}
+
+func (s *UserStore) DeletePasswordResetToken(ctx context.Context, token string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM password_reset_tokens WHERE token = $1`, token)
+	return err
+}
+
 func (s *UserStore) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`, userID, passwordHash)
 	return err

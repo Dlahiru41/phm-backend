@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"ncvms/internal/auth"
 	"ncvms/internal/errors"
+	"ncvms/internal/messaging"
 	"ncvms/internal/middleware"
 	"ncvms/internal/models"
 	"ncvms/internal/response"
@@ -19,10 +21,12 @@ import (
 )
 
 type AuthHandler struct {
-	UserStore  *store.UserStore
-	AuditStore *store.AuditStore
-	JWTSecret  string
-	JWTExpiry  int
+	UserStore           *store.UserStore
+	AuditStore          *store.AuditStore
+	WhatsAppSender      messaging.WhatsAppSender
+	JWTSecret           string
+	JWTExpiry           int
+	PasswordResetOTPTTL time.Duration
 }
 
 type LoginRequest struct {
@@ -45,7 +49,9 @@ type ForgotPasswordRequest struct {
 }
 
 type ResetPasswordRequest struct {
-	Token           string `json:"token" binding:"required"`
+	Token           string `json:"token"`
+	Email           string `json:"email" binding:"omitempty,email"`
+	OTPCode         string `json:"otpCode" binding:"omitempty,len=6"`
 	NewPassword     string `json:"newPassword" binding:"required,min=6"`
 	ConfirmPassword string `json:"confirmPassword" binding:"required"`
 }
@@ -186,6 +192,11 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 }
 
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	if h.WhatsAppSender == nil {
+		response.AbortWithError(c, errors.New(http.StatusInternalServerError, "ERROR", "Messaging service is not configured"))
+		return
+	}
+
 	var req ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		if response.ValidationErrorFromBind(c, err) {
@@ -194,16 +205,45 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		response.ValidationError(c, "Validation failed", nil)
 		return
 	}
+
+	genericMessage := "If an account exists, a password reset OTP has been sent."
+	req.Email = strings.TrimSpace(req.Email)
 	user, err := h.UserStore.GetByEmail(c.Request.Context(), req.Email)
 	if err != nil || user == nil {
-		response.OK(c, gin.H{"message": "Password reset email sent."})
+		response.OK(c, gin.H{"message": genericMessage})
 		return
 	}
-	token := uuid.New().String()
-	expiresAt := time.Now().Add(1 * time.Hour)
-	_ = h.UserStore.SavePasswordResetToken(c.Request.Context(), token, user.UserId, expiresAt)
-	// TODO: send email with reset link containing token
-	response.OK(c, gin.H{"message": "Password reset email sent."})
+
+	phone, nerr := normalizePhone(user.PhoneNumber)
+	if nerr != nil {
+		log.Printf("[forgot-password-otp] skip send userId=%s reason=invalid-phone", user.UserId)
+		response.OK(c, gin.H{"message": genericMessage})
+		return
+	}
+
+	otpCode, err := generateOTPCode()
+	if err != nil {
+		log.Printf("[forgot-password-otp] generate failed userId=%s: %v", user.UserId, err)
+		response.OK(c, gin.H{"message": genericMessage})
+		return
+	}
+
+	token := fmt.Sprintf("%s:%s:%s", user.UserId, otpCode, uuid.NewString()[:8])
+	expiresAt := time.Now().Add(h.getPasswordResetOTPTTL())
+	if err := h.UserStore.SavePasswordResetToken(c.Request.Context(), token, user.UserId, expiresAt); err != nil {
+		log.Printf("[forgot-password-otp] save failed userId=%s: %v", user.UserId, err)
+		response.OK(c, gin.H{"message": genericMessage})
+		return
+	}
+
+	if err := h.WhatsAppSender.SendOTP(c.Request.Context(), phone, otpCode, h.getPasswordResetOTPTTL()); err != nil {
+		_ = h.UserStore.DeletePasswordResetToken(c.Request.Context(), token)
+		log.Printf("[forgot-password-otp] send failed userId=%s phone=%s: %v", user.UserId, phone, err)
+		response.OK(c, gin.H{"message": genericMessage})
+		return
+	}
+
+	response.OK(c, gin.H{"message": genericMessage})
 }
 
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
@@ -219,7 +259,32 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		response.ValidationError(c, "Passwords do not match.", nil)
 		return
 	}
-	userID, err := h.UserStore.ConsumeResetToken(c.Request.Context(), req.Token)
+
+	ctx := c.Request.Context()
+	var userID string
+	var err error
+	token := strings.TrimSpace(req.Token)
+	if token != "" {
+		userID, err = h.UserStore.ConsumeResetToken(ctx, token)
+	} else {
+		email := strings.TrimSpace(req.Email)
+		otpCode := strings.TrimSpace(req.OTPCode)
+		if email == "" || otpCode == "" {
+			response.ValidationError(c, "email and otpCode are required when token is not provided.", []response.ErrorDetail{
+				{Field: "email", Message: "Required when token is omitted."},
+				{Field: "otpCode", Message: "Required when token is omitted."},
+			})
+			return
+		}
+
+		user, lookupErr := h.UserStore.GetByEmail(ctx, email)
+		if lookupErr != nil || user == nil {
+			response.AbortWithError(c, errors.New(http.StatusUnprocessableEntity, "INVALID_TOKEN", "Invalid or expired reset token"))
+			return
+		}
+
+		userID, err = h.UserStore.ConsumeResetOTP(ctx, user.UserId, otpCode)
+	}
 	if err != nil {
 		response.AbortWithError(c, errors.New(http.StatusUnprocessableEntity, "INVALID_TOKEN", "Invalid or expired reset token"))
 		return
@@ -229,12 +294,19 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to update password")
 		return
 	}
-	err = h.UserStore.UpdatePassword(c.Request.Context(), userID, string(hash))
+	err = h.UserStore.UpdatePassword(ctx, userID, string(hash))
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to update password")
 		return
 	}
 	response.OK(c, gin.H{"message": "Password reset successfully."})
+}
+
+func (h *AuthHandler) getPasswordResetOTPTTL() time.Duration {
+	if h.PasswordResetOTPTTL <= 0 {
+		return 10 * time.Minute
+	}
+	return h.PasswordResetOTPTTL
 }
 
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
