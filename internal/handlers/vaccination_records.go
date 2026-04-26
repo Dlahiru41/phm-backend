@@ -100,6 +100,10 @@ func (h *VaccinationRecordsHandler) Create(c *gin.Context) {
 		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to create record"))
 		return
 	}
+
+	// Best-effort parent notification for the newly recorded vaccination next due date.
+	h.notifyParentNextDueDate(c, req.ChildId, req.NextDueDate)
+
 	response.Created(c, gin.H{"recordId": recordID, "message": "Vaccination recorded successfully."})
 }
 
@@ -545,6 +549,34 @@ func (h *VaccinationRecordsHandler) UpdateNextDueDateByChildID(c *gin.Context) {
 		"nextDueDate": nextDueDate,
 		"message":     "Next due date updated successfully.",
 	})
+}
+
+func (h *VaccinationRecordsHandler) notifyParentNextDueDate(c *gin.Context, childID string, nextDueDate *string) {
+	if h.ChildStore == nil || h.WhatsAppSender == nil || nextDueDate == nil {
+		return
+	}
+
+	dueDate := strings.TrimSpace(*nextDueDate)
+	if dueDate == "" {
+		return
+	}
+
+	child, err := h.ChildStore.GetByID(c.Request.Context(), childID)
+	if err != nil {
+		log.Printf("[vaccination-create] failed to load child for parent notification child=%s err=%v", childID, err)
+		return
+	}
+
+	parentPhone := strings.TrimSpace(child.ParentWhatsAppNumber)
+	if parentPhone == "" {
+		return
+	}
+
+	childName := safeChildName(strings.TrimSpace(child.FirstName) + " " + strings.TrimSpace(child.LastName))
+	message := fmt.Sprintf("Vaccination recorded for %s. Next due date is %s.", childName, dueDate)
+	if err := h.WhatsAppSender.SendMessage(c.Request.Context(), parentPhone, message); err != nil {
+		log.Printf("[vaccination-create] failed to send next due date sms child=%s phone=%s err=%v", childID, parentPhone, err)
+	}
 }
 
 func safeChildName(name string) string {
