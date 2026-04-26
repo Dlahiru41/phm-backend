@@ -116,6 +116,33 @@ func (h *UsersHandler) GetMyAssignedArea(c *gin.Context) {
 	})
 }
 
+func (h *UsersHandler) ListPHMAssignedAreas(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil {
+		response.AbortWithError(c, errors.ErrUnauthorized)
+		return
+	}
+	if claims.Role != "moh" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+
+	items, err := h.UserStore.ListPHMAssignedAreas(c.Request.Context())
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to fetch PHM assigned areas"))
+		return
+	}
+
+	response.OK(c, gin.H{
+		"count": len(items),
+		"items": items,
+	})
+}
+
 func (h *UsersHandler) UpdateMe(c *gin.Context) {
 	claims := middleware.GetClaims(c)
 	if claims == nil {

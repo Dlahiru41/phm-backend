@@ -37,6 +37,13 @@ type MOHUserSummary struct {
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
+type PHMAssignedAreaItem struct {
+	UserId       string `json:"userId"`
+	EmployeeId   string `json:"employeeId"`
+	Name         string `json:"name"`
+	AssignedArea string `json:"assignedArea"`
+}
+
 type Child struct {
 	ChildId            string    `json:"childId"`
 	RegistrationNumber string    `json:"registrationNumber"`

@@ -221,6 +221,33 @@ func (s *UserStore) ListMOHUsers(ctx context.Context) ([]models.MOHUserSummary, 
 	return items, nil
 }
 
+// ListPHMAssignedAreas returns PHM users with their assigned areas.
+func (s *UserStore) ListPHMAssignedAreas(ctx context.Context) ([]models.PHMAssignedAreaItem, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, COALESCE(employee_id, ''), name, COALESCE(assigned_area, '')
+		FROM users
+		WHERE role = 'phm' AND NULLIF(TRIM(COALESCE(assigned_area, '')), '') IS NOT NULL
+		ORDER BY assigned_area ASC, name ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]models.PHMAssignedAreaItem, 0)
+	for rows.Next() {
+		var item models.PHMAssignedAreaItem
+		if err := rows.Scan(&item.UserId, &item.EmployeeId, &item.Name, &item.AssignedArea); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 // IsAdmin checks if a user has admin role
 func (s *UserStore) IsAdmin(ctx context.Context, userID string) (bool, error) {
 	var role string
