@@ -39,6 +39,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		usersGroup.POST("/request-mobile-change", users.RequestMobileChange)
 		usersGroup.POST("/verify-mobile-change", users.VerifyMobileChange)
 		usersGroup.POST("/phm", middleware.RequireRole("moh"), users.CreatePHM)
+		usersGroup.GET("/:userId", middleware.RequireRole("phm"), users.GetParentByID)
 	}
 
 	// Children

@@ -116,6 +116,52 @@ func (h *UsersHandler) GetMyAssignedArea(c *gin.Context) {
 	})
 }
 
+func (h *UsersHandler) GetParentByID(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil {
+		response.AbortWithError(c, errors.ErrUnauthorized)
+		return
+	}
+
+	if claims.Role != "phm" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+
+	userID := strings.TrimSpace(c.Param("userId"))
+	if userID == "" || !strings.HasPrefix(userID, "user-parent-") {
+		response.AbortWithError(c, errors.New(http.StatusUnprocessableEntity, "VALIDATION_ERROR", "userId must be a valid parent user ID"))
+		return
+	}
+
+	user, err := h.UserStore.GetByID(c.Request.Context(), userID)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.ErrNotFound)
+		return
+	}
+
+	if user.Role != "parent" {
+		response.AbortWithError(c, errors.ErrNotFound)
+		return
+	}
+
+	response.OK(c, gin.H{
+		"userId":             user.UserId,
+		"email":              user.Email,
+		"nic":                user.NIC,
+		"name":               user.Name,
+		"role":               user.Role,
+		"phoneNumber":        user.PhoneNumber,
+		"address":            user.Address,
+		"languagePreference": user.LanguagePreference,
+		"createdAt":          user.CreatedAt,
+	})
+}
+
 func (h *UsersHandler) ListPHMAssignedAreas(c *gin.Context) {
 	claims := middleware.GetClaims(c)
 	if claims == nil {
