@@ -174,3 +174,140 @@ func (s *MOHDashboardStore) RecentChildren(ctx context.Context) ([]map[string]in
 	}
 	return results, rows.Err()
 }
+
+// AreaSummary returns comprehensive statistics for a specific area assigned to a PHM
+func (s *MOHDashboardStore) AreaSummary(ctx context.Context, assignedArea string) (map[string]interface{}, error) {
+	summary := make(map[string]interface{})
+
+	// Total children in area
+	var totalChildren int
+	err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM children WHERE gn_division = $1
+	`, assignedArea).Scan(&totalChildren)
+	if err != nil {
+		return nil, err
+	}
+	summary["totalChildren"] = totalChildren
+
+	// Vaccinated children count (have at least one vaccination record with status 'administered')
+	var vaccinatedCount int
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT child_id) FROM vaccination_records 
+		WHERE status = 'administered' AND child_id IN (
+			SELECT id FROM children WHERE gn_division = $1
+		)
+	`, assignedArea).Scan(&vaccinatedCount)
+	if err != nil {
+		return nil, err
+	}
+	summary["vaccinatedCount"] = vaccinatedCount
+
+	// Vaccination coverage percentage
+	var coverage float64
+	if totalChildren > 0 {
+		coverage = (float64(vaccinatedCount) / float64(totalChildren)) * 100
+	}
+	summary["coveragePercentage"] = coverage
+
+	// Missed vaccinations (overdue - next_due_date is past and status is not administered or cancelled)
+	var missedVaccinations int
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT child_id) FROM vaccination_records 
+		WHERE next_due_date < CURRENT_DATE AND status NOT IN ('administered', 'cancelled')
+		AND child_id IN (SELECT id FROM children WHERE gn_division = $1)
+	`, assignedArea).Scan(&missedVaccinations)
+	if err != nil {
+		return nil, err
+	}
+	summary["missedVaccinations"] = missedVaccinations
+
+	// Upcoming vaccinations (due in next 7 days and not yet administered)
+	var upcomingVaccinations int
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT child_id) FROM vaccination_records 
+		WHERE next_due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+		AND status NOT IN ('administered', 'cancelled')
+		AND child_id IN (SELECT id FROM children WHERE gn_division = $1)
+	`, assignedArea).Scan(&upcomingVaccinations)
+	if err != nil {
+		return nil, err
+	}
+	summary["upcomingVaccinations"] = upcomingVaccinations
+
+	// New registrations this month
+	var newRegistrations int
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM children 
+		WHERE gn_division = $1 
+		AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+	`, assignedArea).Scan(&newRegistrations)
+	if err != nil {
+		return nil, err
+	}
+	summary["newRegistrationsThisMonth"] = newRegistrations
+
+	// Growth records recorded this month
+	var growthRecords int
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM growth_records 
+		WHERE child_id IN (SELECT id FROM children WHERE gn_division = $1)
+		AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+	`, assignedArea).Scan(&growthRecords)
+	if err != nil {
+		return nil, err
+	}
+	summary["growthRecordsThisMonth"] = growthRecords
+
+	// Scheduled clinics for this area
+	var scheduledClinics int
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM clinic_schedules 
+		WHERE gn_division = $1 AND status = 'scheduled'
+	`, assignedArea).Scan(&scheduledClinics)
+	if err != nil {
+		return nil, err
+	}
+	summary["scheduledClinics"] = scheduledClinics
+
+	// Children by vaccination status breakdown
+	// On Track: has at least one administered vaccination, no overdue items
+	// Delayed: has at least one overdue (missed) vaccination or no vaccinations yet but due soon
+	// Not Started: no vaccination records at all
+	statusBreakdown := make(map[string]interface{})
+
+	var onTrack, delayed, notStarted int
+
+	// On Track: children with vaccinations and no overdue items
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT c.id) FROM children c
+		WHERE c.gn_division = $1
+		AND EXISTS (SELECT 1 FROM vaccination_records vr WHERE vr.child_id = c.id AND vr.status = 'administered')
+		AND NOT EXISTS (SELECT 1 FROM vaccination_records vr WHERE vr.child_id = c.id AND vr.next_due_date < CURRENT_DATE AND vr.status NOT IN ('administered', 'cancelled'))
+	`, assignedArea).Scan(&onTrack)
+	if err != nil {
+		return nil, err
+	}
+
+	// Not Started: children with no vaccination records
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT c.id) FROM children c
+		WHERE c.gn_division = $1
+		AND NOT EXISTS (SELECT 1 FROM vaccination_records vr WHERE vr.child_id = c.id)
+	`, assignedArea).Scan(&notStarted)
+	if err != nil {
+		return nil, err
+	}
+
+	// Delayed: children with overdue vaccinations (totalChildren - onTrack - notStarted)
+	delayed = totalChildren - onTrack - notStarted
+	if delayed < 0 {
+		delayed = 0
+	}
+
+	statusBreakdown["onTrack"] = onTrack
+	statusBreakdown["delayed"] = delayed
+	statusBreakdown["notStarted"] = notStarted
+	summary["vaccinationStatusBreakdown"] = statusBreakdown
+
+	return summary, nil
+}

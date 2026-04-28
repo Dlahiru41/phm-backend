@@ -131,6 +131,7 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		analyticsGroup.GET("/vaccination-coverage", middleware.RequireRole("moh"), analytics.VaccinationCoverage)
 		analyticsGroup.GET("/area-performance", middleware.RequireRole("moh"), analytics.AreaPerformance)
 		analyticsGroup.GET("/phm-dashboard", middleware.RequireRole("phm"), analytics.PHMDashboard)
+		analyticsGroup.GET("/area-summary", middleware.RequireRole("phm"), analytics.AreaSummary)
 		analyticsGroup.GET("/parent-dashboard", middleware.RequireRole("parent"), analytics.ParentDashboard)
 	}
 

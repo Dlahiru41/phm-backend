@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"net/http"
+	"strings"
+
 	"ncvms/internal/errors"
 	"ncvms/internal/middleware"
 	"ncvms/internal/response"
@@ -10,10 +13,12 @@ import (
 )
 
 type AnalyticsHandler struct {
-	ChildStore   *store.ChildStore
-	RecordStore  *store.VaccinationRecordStore
-	GrowthStore  *store.GrowthRecordStore
-	NotifyStore  *store.NotificationStore
+	ChildStore     *store.ChildStore
+	RecordStore    *store.VaccinationRecordStore
+	GrowthStore    *store.GrowthRecordStore
+	NotifyStore    *store.NotificationStore
+	UserStore      *store.UserStore
+	DashboardStore *store.MOHDashboardStore
 }
 
 func (h *AnalyticsHandler) MOHDashboard(c *gin.Context) {
@@ -43,12 +48,12 @@ func (h *AnalyticsHandler) MOHDashboard(c *gin.Context) {
 	}
 	response.OK(c, gin.H{
 		"totalChildren":             totalChildren,
-		"vaccinatedCount":            vaccinatedCount,
-		"coveragePercentage":         coveragePercentage,
-		"missedVaccinations":         missedVaccinations,
-		"upcomingVaccinations":       upcomingVaccinations,
-		"newRegistrationsThisMonth":  newRegistrationsThisMonth,
-		"growthRecordsThisMonth":     growthRecordsThisMonth,
+		"vaccinatedCount":           vaccinatedCount,
+		"coveragePercentage":        coveragePercentage,
+		"missedVaccinations":        missedVaccinations,
+		"upcomingVaccinations":      upcomingVaccinations,
+		"newRegistrationsThisMonth": newRegistrationsThisMonth,
+		"growthRecordsThisMonth":    growthRecordsThisMonth,
 	})
 }
 
@@ -90,13 +95,63 @@ func (h *AnalyticsHandler) PHMDashboard(c *gin.Context) {
 		response.AbortWithError(c, errors.ErrForbidden)
 		return
 	}
+
+	user, err := h.UserStore.GetByID(c.Request.Context(), claims.UserId)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.ErrNotFound)
+		return
+	}
+
+	if user.AssignedArea == nil || strings.TrimSpace(*user.AssignedArea) == "" {
+		response.AbortWithError(c, errors.New(http.StatusNotFound, "NOT_FOUND", "Assigned area not found"))
+		return
+	}
+
+	summary, err := h.DashboardStore.AreaSummary(c.Request.Context(), *user.AssignedArea)
+	if err != nil {
+		response.AbortWithError(c, errors.New(http.StatusInternalServerError, "DATABASE_ERROR", "Failed to fetch area summary"))
+		return
+	}
+
+	response.OK(c, summary)
+}
+
+// AreaSummary returns analytics summary for a PHM's assigned area
+func (h *AnalyticsHandler) AreaSummary(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil || claims.Role != "phm" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+
+	user, err := h.UserStore.GetByID(c.Request.Context(), claims.UserId)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.ErrNotFound)
+		return
+	}
+
+	if user.AssignedArea == nil || strings.TrimSpace(*user.AssignedArea) == "" {
+		response.AbortWithError(c, errors.New(http.StatusNotFound, "NOT_FOUND", "Assigned area not found"))
+		return
+	}
+
+	summary, err := h.DashboardStore.AreaSummary(c.Request.Context(), *user.AssignedArea)
+	if err != nil {
+		response.AbortWithError(c, errors.New(http.StatusInternalServerError, "DATABASE_ERROR", "Failed to fetch area summary"))
+		return
+	}
+
 	response.OK(c, gin.H{
-		"totalChildrenInArea":    120,
-		"vaccinatedCount":       105,
-		"missedVaccinations":     8,
-		"upcomingVaccinations":  15,
-		"growthRecordsThisMonth": 30,
-		"recentRegistrations":   5,
+		"area":    *user.AssignedArea,
+		"summary": summary,
 	})
 }
 
@@ -130,7 +185,7 @@ func (h *AnalyticsHandler) ParentDashboard(c *gin.Context) {
 		})
 	}
 	response.OK(c, gin.H{
-		"children":             childSummaries,
+		"children":            childSummaries,
 		"unreadNotifications": unreadCount,
 	})
 }

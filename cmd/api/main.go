@@ -103,10 +103,12 @@ func main() {
 	reportsHandler := &handlers.ReportsHandler{ReportStore: store.NewReportStore(pool)}
 	auditHandler := &handlers.AuditHandler{AuditStore: store.NewAuditStore(pool)}
 	analyticsHandler := &handlers.AnalyticsHandler{
-		ChildStore:  childStore,
-		RecordStore: store.NewVaccinationRecordStore(pool),
-		GrowthStore: growthStore,
-		NotifyStore: store.NewNotificationStore(pool),
+		ChildStore:     childStore,
+		RecordStore:    store.NewVaccinationRecordStore(pool),
+		GrowthStore:    growthStore,
+		NotifyStore:    store.NewNotificationStore(pool),
+		UserStore:      usersStore,
+		DashboardStore: store.NewMOHDashboardStore(pool),
 	}
 	adminHandler := &handlers.AdminHandler{
 		UserStore:            usersStore,
