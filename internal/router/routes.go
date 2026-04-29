@@ -76,6 +76,11 @@ func Setup(engine *gin.Engine, jwtSecret string, auth *handlers.AuthHandler, use
 		recGroup.PUT("/:recordId", middleware.RequireRole("phm"), vaccRec.Update)
 		recGroup.DELETE("/:recordId", middleware.RequireRole("moh"), vaccRec.Delete)
 	}
+	mohVaccinationGroup := api.Group("/moh/vaccination-records").Use(authMw).Use(middleware.RequireRole("moh"))
+	{
+		mohVaccinationGroup.GET("", vaccRec.ListMOH)
+		mohVaccinationGroup.DELETE("/:recordId", vaccRec.Delete)
+	}
 
 	parentGroup := api.Group("/parent").Use(authMw).Use(middleware.RequireRole("parent"))
 	{

@@ -504,6 +504,45 @@
             },
             "description": "Requires role: moh"
           }
+        },
+        {
+          "name": "List Vaccination Records (MOH Namespace)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/moh/vaccination-records?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["moh", "vaccination-records"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "areaCode", "value": "", "disabled": true },
+                { "key": "vaccineId", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Requires role: moh"
+          }
+        },
+        {
+          "name": "Delete Vaccination Record (MOH Namespace)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/moh/vaccination-records/rec-12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["moh", "vaccination-records", "rec-12345678"]
+            },
+            "description": "Requires role: moh"
+          }
         }
       ]
     },

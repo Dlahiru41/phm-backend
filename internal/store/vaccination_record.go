@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"ncvms/internal/models"
 
@@ -80,24 +81,28 @@ func (s *VaccinationRecordStore) ListMOH(ctx context.Context, areaCode, vaccineI
 		idx++
 	}
 	if startDate != "" {
-		base += fmt.Sprintf(` AND vr.administered_date >= $%d`, idx)
+		base += fmt.Sprintf(` AND vr.administered_date >= $%d::date`, idx)
 		args = append(args, startDate)
 		idx++
 	}
 	if endDate != "" {
-		base += fmt.Sprintf(` AND vr.administered_date <= $%d`, idx)
+		base += fmt.Sprintf(` AND vr.administered_date <= $%d::date`, idx)
 		args = append(args, endDate)
 		idx++
 	}
+	// log query parts to aid debugging when no rows are returned
+	log.Printf("[ListMOH] count base: %s; args=%v", base, args)
 	err = s.pool.QueryRow(ctx, `SELECT COUNT(*) `+base, args...).Scan(&total)
 	if err != nil {
 		return 0, nil, err
 	}
-	args = append(args, limit, (page-1)*limit)
-	rows, err := s.pool.Query(ctx, `
+	rowsQuery := `
 		SELECT vr.id, vr.child_id, vr.vaccine_id, v.name, vr.administered_date::text, vr.batch_number, vr.administered_by,
-		       vr.location, vr.site, vr.dose_number, vr.next_due_date::text, vr.status, vr.notes, vr.created_at
-		`+base+` ORDER BY vr.administered_date DESC LIMIT $`+fmt.Sprint(idx)+` OFFSET $`+fmt.Sprint(idx+1), args...)
+			   vr.location, vr.site, vr.dose_number, vr.next_due_date::text, vr.status, vr.notes, vr.created_at
+		` + base + ` ORDER BY vr.administered_date DESC LIMIT $` + fmt.Sprint(idx) + ` OFFSET $` + fmt.Sprint(idx+1)
+	args = append(args, limit, (page-1)*limit)
+	log.Printf("[ListMOH] rowsQuery: %s; args=%v", rowsQuery, args)
+	rows, err := s.pool.Query(ctx, rowsQuery, args...)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -120,8 +125,14 @@ func (s *VaccinationRecordStore) Update(ctx context.Context, recordID string, va
 }
 
 func (s *VaccinationRecordStore) Delete(ctx context.Context, recordID string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM vaccination_records WHERE id = $1`, recordID)
-	return err
+	cmd, err := s.pool.Exec(ctx, `DELETE FROM vaccination_records WHERE id = $1`, recordID)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (s *VaccinationRecordStore) UpdateLatestNextDueDateByChildID(ctx context.Context, childID, nextDueDate string) error {

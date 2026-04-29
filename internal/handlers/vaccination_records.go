@@ -124,6 +124,9 @@ func (h *VaccinationRecordsHandler) List(c *gin.Context) {
 			response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to list records"))
 			return
 		}
+		if list == nil {
+			list = []models.VaccinationRecord{}
+		}
 		response.OK(c, list)
 		return
 	}
@@ -148,6 +151,39 @@ func (h *VaccinationRecordsHandler) List(c *gin.Context) {
 		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to list records"))
 		return
 	}
+	if list == nil {
+		list = []models.VaccinationRecord{}
+	}
+	response.OK(c, gin.H{"total": total, "page": page, "limit": limit, "data": list})
+}
+
+// ListMOH returns all vaccination records for MOH users with filters and pagination.
+func (h *VaccinationRecordsHandler) ListMOH(c *gin.Context) {
+	claims := middleware.GetClaims(c)
+	if claims == nil || claims.Role != "moh" {
+		response.AbortWithError(c, errors.ErrForbidden)
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit > 100 {
+		limit = 20
+	}
+
+	total, list, err := h.RecordStore.ListMOH(c.Request.Context(), c.Query("areaCode"), c.Query("vaccineId"), c.Query("status"), c.Query("startDate"), c.Query("endDate"), page, limit)
+	if err != nil {
+		if appErr := errors.FromErr(err); appErr != nil {
+			response.AbortWithError(c, appErr)
+			return
+		}
+		response.AbortWithError(c, errors.New(errors.ErrInternal.Status, "ERROR", "Failed to list records"))
+		return
+	}
+
 	response.OK(c, gin.H{"total": total, "page": page, "limit": limit, "data": list})
 }
 
@@ -378,7 +414,11 @@ func (h *VaccinationRecordsHandler) Update(c *gin.Context) {
 }
 
 func (h *VaccinationRecordsHandler) Delete(c *gin.Context) {
-	recordID := c.Param("recordId")
+	recordID := strings.TrimSpace(c.Param("recordId"))
+	if recordID == "" {
+		response.AbortWithError(c, errors.New(errors.ErrBadRequest.Status, "BAD_REQUEST", "recordId is required"))
+		return
+	}
 	err := h.RecordStore.Delete(c.Request.Context(), recordID)
 	if err != nil {
 		if appErr := errors.FromErr(err); appErr != nil {
